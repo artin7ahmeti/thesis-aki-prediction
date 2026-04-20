@@ -1,8 +1,9 @@
 # AKI Prediction Thesis 
 
-# Raw & derived data (PhysioNet DUA)
-data/
-!data/.gitkeep
+# Raw & derived data (PhysioNet DUA) — anchored to repo root only, so
+# src/aki/data/ (the Python subpackage) is not accidentally excluded.
+/data/
+!/data/.gitkeep
 
 # Model artifacts, figures, tables, DuckDB stores
 reports/figures/
