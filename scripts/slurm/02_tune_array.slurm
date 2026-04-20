@@ -15,7 +15,7 @@
 #SBATCH --array=0-47%12
 
 # shellcheck disable=SC1091
-source "$(dirname "${BASH_SOURCE[0]}")/komondor.env"
+source "${SLURM_SUBMIT_DIR:-$PWD}/scripts/slurm/komondor.env"
 aki_activate
 
 TASKS=(aki_stage1_24h aki_stage1_48h aki_stage2_24h aki_stage2_48h)
