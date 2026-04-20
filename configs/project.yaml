@@ -1,0 +1,21 @@
+# Project-wide constants
+
+project:
+  name: aki-prediction
+  version: 0.1.0
+
+# Paths support ${VAR:-default} expansion. Defaults keep local dev working;
+# on Komondor we set AKI_* env vars to /scratch/pr_2026/... and /project/pr_2026/...
+paths:
+  data_dir:     ${AKI_DATA_DIR:-data}
+  raw_dir:      ${AKI_RAW_DIR:-data/raw}
+  curated_dir:  ${AKI_CURATED_DIR:-data/curated}
+  duckdb_path:  ${AKI_DUCKDB_PATH:-data/mimic.duckdb}
+  reports_dir:  ${AKI_REPORTS_DIR:-reports}
+  mlflow_uri:   ${AKI_MLFLOW_URI:-file:./mlruns}
+
+random_seed: 42
+
+logging:
+  level: INFO
+  file: reports/artifacts/pipeline.log

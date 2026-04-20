@@ -1,0 +1,30 @@
+# MIMIC-IV raw-data catalog
+
+# DuckDB reads these CSV.gz files directly
+
+mimic_iv:
+  version: "3.1"
+
+  hosp:
+    patients:      hosp/patients.csv.gz
+    admissions:    hosp/admissions.csv.gz
+    labevents:     hosp/labevents.csv.gz
+    d_labitems:    hosp/d_labitems.csv.gz
+    prescriptions: hosp/prescriptions.csv.gz
+    diagnoses_icd: hosp/diagnoses_icd.csv.gz
+    d_icd_diagnoses: hosp/d_icd_diagnoses.csv.gz
+    omr:           hosp/omr.csv.gz
+
+  icu:
+    icustays:       icu/icustays.csv.gz
+    chartevents:    icu/chartevents.csv.gz
+    d_items:        icu/d_items.csv.gz
+    inputevents:    icu/inputevents.csv.gz
+    outputevents:   icu/outputevents.csv.gz
+    procedureevents: icu/procedureevents.csv.gz
+
+# DuckDB performance tuning
+duckdb:
+  memory_limit: "32GB"
+  threads: 8
+  temp_directory: "data/.duckdb_tmp"

@@ -1,0 +1,25 @@
+# Cohort inclusion/exclusion and landmark design
+
+cohort:
+  min_age: 18
+  min_icu_los_hours: 30          # must cover obs window (24h) + first horizon gap
+  max_icu_los_days: 30           # exclude extreme outliers
+  keep_first_icu_stay: true      # one stay per hospital admission (earliest)
+  # Exclusions handled downstream in SQL:
+  #   - ESRD (CKD stage 5 / dialysis-dependent) via ICD-10 N18.6 / N18.5
+  #   - Prevalent AKI at ICU admission (KDIGO >= 1 within first `obs_window_hours`)
+
+# Dynamic landmark prediction
+
+landmarks:
+  obs_window_hours: 24           # look-back window for features at each landmark
+  spacing_hours: 6               # new landmark every 6 h
+  min_stay_hours: 30             # skip stays shorter than obs_window + gap
+  horizons_hours: [24, 48]       # predict incident AKI within each horizon
+  exclude_after_aki: true        # drop landmarks where AKI has already occurred
+
+# ESRD / pre-existing kidney disease exclusion
+
+esrd_icd:
+  icd10: ["N186"]                # ESRD
+  icd9: ["5856"]                 # ESRD (ICD-9)

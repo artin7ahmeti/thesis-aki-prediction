@@ -1,0 +1,48 @@
+# Model hyperparameters
+# Primary: EBM + sparse logistic regression.
+# Baseline: LightGBM.
+# Sequence models intentionally omitted until tabular is validated.
+
+# Primary interpretable models
+ebm:
+  max_bins: 256
+  max_interaction_bins: 32
+  interactions: 10               # top-k pairwise interactions (post-fit)
+  learning_rate: 0.01
+  max_rounds: 5000
+  early_stopping_rounds: 50
+  min_samples_leaf: 2
+  outer_bags: 8                  # ensemble size, better uncertainty estimates
+
+sparse_logistic:
+  # L1-regularized scorecard, selection via path + refit
+  penalty: l1
+  solver: saga
+  C_grid: [0.001, 0.003, 0.01, 0.03, 0.1, 0.3, 1.0, 3.0, 10.0]
+  max_iter: 5000
+  class_weight: balanced
+  scoring: roc_auc               # CV metric for C selection
+  target_features: 10            # enforce via post-hoc selection if needed
+  refit_on_selected: true        # drop zeroed features, refit with mild L2
+
+# Nontransparent baseline
+lightgbm:
+  objective: binary
+  metric: auc
+  n_estimators: 2000
+  learning_rate: 0.05
+  num_leaves: 31
+  max_depth: -1
+  min_child_samples: 20
+  subsample: 0.8
+  colsample_bytree: 0.8
+  reg_alpha: 0.0
+  reg_lambda: 0.0
+  class_weight: balanced
+  early_stopping_rounds: 100
+
+# ---- Calibration (applied post-training on validation split) ----
+calibration:
+  method: isotonic               # or "sigmoid" (Platt)
+  cv: prefit
+  apply_to: [ebm, sparse_logistic, lightgbm]

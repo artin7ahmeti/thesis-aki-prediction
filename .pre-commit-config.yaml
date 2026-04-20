@@ -1,0 +1,31 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-added-large-files
+        args: ["--maxkb=1000"]
+      - id: check-merge-conflict
+      - id: detect-private-key
+      # Guardrail: never commit raw patient data
+      - id: check-added-large-files
+        args: ["--maxkb=1000"]
+        name: "Block large files (likely MIMIC data)"
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.4.4
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: no-mimic-in-git
+        name: "Block MIMIC patient data paths"
+        entry: bash -c 'if git diff --cached --name-only | grep -E "^data/(raw|interim|processed)"; then echo "ERROR: attempting to commit MIMIC data"; exit 1; fi'
+        language: system
+        pass_filenames: false

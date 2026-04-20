@@ -1,0 +1,177 @@
+# Feature catalog
+
+# Item IDs reference MIMIC-IV v3.1 d_items / d_labitems.
+# Valid ranges filter physiological outliers before aggregation.
+
+# Rolling-window settings
+windows_hours: [6, 12, 24]
+
+aggregations:
+  - latest        # most recent value in window
+  - delta         # last − first (signed change)
+  - min
+  - max
+  - mean
+  - std           # within-window variability
+  - count         # number of measurements (proxy for monitoring intensity)
+  - missing       # 1 if no measurements in window, else 0
+
+# Demographics (static per ICU stay)
+
+demographics:
+  - name: age
+    source: patients
+    column: anchor_age
+    kind: continuous
+  - name: sex
+    source: patients
+    column: gender
+    kind: binary   # M=1, F=0
+  - name: ethnicity_group
+    source: admissions
+    column: race
+    kind: categorical
+    groups:
+      White: ["WHITE", "WHITE - RUSSIAN", "WHITE - BRAZILIAN", "WHITE - EASTERN EUROPEAN", "WHITE - OTHER EUROPEAN", "PORTUGUESE"]
+      Black: ["BLACK/AFRICAN AMERICAN", "BLACK/CAPE VERDEAN", "BLACK/CARIBBEAN ISLAND", "BLACK/AFRICAN"]
+      Hispanic: ["HISPANIC OR LATINO", "HISPANIC/LATINO - PUERTO RICAN", "HISPANIC/LATINO - DOMINICAN", "HISPANIC/LATINO - GUATEMALAN", "HISPANIC/LATINO - CUBAN", "HISPANIC/LATINO - SALVADORAN", "HISPANIC/LATINO - CENTRAL AMERICAN", "HISPANIC/LATINO - MEXICAN", "HISPANIC/LATINO - COLOMBIAN", "HISPANIC/LATINO - HONDURAN"]
+      Asian: ["ASIAN", "ASIAN - CHINESE", "ASIAN - SOUTH EAST ASIAN", "ASIAN - ASIAN INDIAN", "ASIAN - KOREAN"]
+      Other: ["OTHER", "UNKNOWN", "UNABLE TO OBTAIN", "PATIENT DECLINED TO ANSWER", "AMERICAN INDIAN/ALASKA NATIVE", "NATIVE HAWAIIAN OR OTHER PACIFIC ISLANDER", "SOUTH AMERICAN", "MULTIPLE RACE/ETHNICITY"]
+
+# Vitals (chartevents)
+
+vitals:
+  - name: heart_rate
+    itemids: [220045]
+    valid_range: [20, 300]
+  - name: sbp
+    itemids: [220050, 220179]    # invasive + non-invasive
+    valid_range: [40, 300]
+  - name: dbp
+    itemids: [220051, 220180]
+    valid_range: [20, 200]
+  - name: map
+    itemids: [220052, 220181]
+    valid_range: [30, 250]
+  - name: resp_rate
+    itemids: [220210]
+    valid_range: [4, 70]
+  - name: spo2
+    itemids: [220277]
+    valid_range: [50, 100]
+  - name: temperature_c
+    itemids: [223762]            # Celsius (native)
+    valid_range: [30.0, 45.0]
+  - name: temperature_f
+    itemids: [223761]            # Fahrenheit -> converted to Celsius in SQL
+    valid_range: [86.0, 113.0]
+  - name: gcs_eye
+    itemids: [220739]
+    valid_range: [1, 4]
+  - name: gcs_verbal
+    itemids: [223900]
+    valid_range: [1, 5]
+  - name: gcs_motor
+    itemids: [223901]
+    valid_range: [1, 6]
+
+# Labs (labevents)
+
+labs:
+  - name: creatinine
+    itemids: [50912]
+    valid_range: [0.1, 30.0]
+    renal: true                  # excluded in "renal-excluded" feature family
+  - name: bun
+    itemids: [51006]
+    valid_range: [1, 200]
+    renal: true
+  - name: potassium
+    itemids: [50971]
+    valid_range: [1.5, 10.0]
+  - name: sodium
+    itemids: [50983]
+    valid_range: [110, 170]
+  - name: bicarbonate
+    itemids: [50882]
+    valid_range: [5, 50]
+  - name: chloride
+    itemids: [50902]
+    valid_range: [70, 140]
+  - name: glucose
+    itemids: [50931, 50809]
+    valid_range: [20, 1000]
+  - name: hemoglobin
+    itemids: [51222]
+    valid_range: [2, 25]
+  - name: hematocrit
+    itemids: [51221]
+    valid_range: [10, 70]
+  - name: wbc
+    itemids: [51301]
+    valid_range: [0.1, 100]
+  - name: platelets
+    itemids: [51265]
+    valid_range: [5, 1500]
+  - name: lactate
+    itemids: [50813]
+    valid_range: [0.1, 30]
+  - name: albumin
+    itemids: [50862]
+    valid_range: [0.5, 6.0]
+  - name: ph_arterial
+    itemids: [50820]
+    valid_range: [6.5, 8.0]
+
+# Treatments / exposures
+
+treatments:
+  - name: vasopressor_any
+    kind: binary_event
+    source: inputevents
+    itemids:
+      norepinephrine: [221906]
+      vasopressin:    [222315]
+      epinephrine:    [221289]
+      dopamine:       [221662]
+      phenylephrine:  [221749]
+      dobutamine:     [221653]
+  - name: loop_diuretic
+    kind: binary_event
+    source: inputevents
+    itemids:
+      furosemide: [221794]       # Furosemide (Lasix)
+  - name: mechanical_ventilation
+    kind: binary_state
+    source: chartevents
+    itemids: [225792, 225794]    # invasive / non-invasive
+  - name: fluid_input_ml
+    kind: continuous_sum
+    source: inputevents
+    unit: mL
+  - name: urine_output_ml
+    kind: continuous_sum
+    source: outputevents
+    itemids: [226559, 226560, 226561, 226584, 226563, 226564, 226565, 226567, 226557, 227488, 227489]
+    renal: true                  # excluded in "renal-excluded" family
+
+# Feature families for input-economy comparison
+
+feature_families:
+  vitals_only:
+    include: [demographics, vitals]
+    description: "Bedside only, no blood draws"
+  labs_only:
+    include: [demographics, labs]
+    description: "Labs + demographics (no continuous monitoring)"
+  combined:
+    include: [demographics, vitals, labs, treatments]
+    description: "All available features"
+  renal_excluded:
+    include: [demographics, vitals, labs, treatments]
+    exclude_renal_flagged: true
+    description: "Combined set without creatinine/BUN/UO (sensitivity)"
+  minimal:
+    include: []                  # auto-populated: top-k by EBM importance
+    max_features: 10
+    description: "Scorecard: <=10 features, >=2% AUROC gap target"

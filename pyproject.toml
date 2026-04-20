@@ -1,0 +1,97 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aki"
+version = "0.1.0"
+description = "Interpretable ML for Early AKI Prediction in ICU Patients (MIMIC-IV v3.1)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [{name = "Artin Ahmeti"}]
+
+dependencies = [
+    # Data & SQL
+    "duckdb>=1.0",
+    "pandas>=2.1",
+    "numpy>=1.24",
+    "pyarrow>=14.0",
+    "polars>=0.20",
+    # Config
+    "pyyaml>=6.0",
+    "pydantic>=2.6",
+    # ML — interpretable primary models
+    "interpret>=0.6",              # Explainable Boosting Machine
+    "scikit-learn>=1.4",
+    # ML — nontransparent baseline
+    "lightgbm>=4.0",
+    # Hyperparameter tuning
+    "optuna>=3.6",
+    # Evaluation & explainability
+    "shap>=0.44",
+    # Plotting
+    "matplotlib>=3.8",
+    "seaborn>=0.13",
+    # Tracking
+    "mlflow>=2.12",
+    # CLI
+    "typer>=0.12",
+    "rich>=13.7",
+    # Utilities
+    "tqdm>=4.66",
+    "loguru>=0.7",
+    "joblib>=1.3",
+]
+
+[project.optional-dependencies]
+sequence = [
+    "torch>=2.1",
+]
+notebooks = [
+    "jupyterlab>=4.0",
+    "ipywidgets>=8.0",
+]
+dev = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+    "ruff>=0.3",
+    "pre-commit>=3.6",
+    "mypy>=1.8",
+]
+all = ["aki[sequence,notebooks,dev]"]
+
+[project.scripts]
+aki = "aki.cli.main:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+aki = ["**/*.sql"]
+
+[tool.ruff]
+line-length = 99
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "N", "PD"]
+ignore = ["E501", "PD901"]  # line length handled by formatter; df naming ok
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+warn_unused_ignores = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra --strict-markers"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: requires real MIMIC-IV data",
+]

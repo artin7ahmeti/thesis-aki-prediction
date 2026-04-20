@@ -1,0 +1,66 @@
+# Evaluation & splitting
+
+# Temporal + patient-level splits
+# anchor_year_group is a 3-year band per patient; guarantees:
+#   (a) no patient crosses splits (anchor is patient-level)
+#   (b) temporal ordering (earlier band -> train, latest band -> test)
+splits:
+  strategy: anchor_year_group
+  train_groups: ["2008 - 2010", "2011 - 2013"]
+  val_groups:   ["2014 - 2016"]
+  test_groups:  ["2017 - 2019", "2020 - 2022"]
+
+# Discrimination / calibration
+metrics:
+  discrimination: [auroc, auprc, sensitivity_at_spec_90, specificity_at_sens_90]
+  calibration:    [brier, calibration_slope, calibration_intercept, ece]
+  calibration_bins: 10
+
+# Decision curve analysis
+decision_curve:
+  threshold_min: 0.01
+  threshold_max: 0.50
+  threshold_step: 0.01
+  clinical_thresholds: [0.05, 0.10, 0.20]   # highlighted on plot
+
+# Bootstrap confidence intervals
+bootstrap:
+  n_iterations: 1000
+  confidence_level: 0.95
+  unit: subject_id               # patient-level resampling, NOT row-level
+
+# Subgroup fairness
+fairness:
+  groups:
+    sex: [M, F]
+    age_group: [[18, 45], [45, 65], [65, 85], [85, 120]]
+    ethnicity_group: [White, Black, Hispanic, Asian, Other]
+  min_subgroup_n: 100            # skip subgroups with too few samples
+  disparity_threshold: 0.05      # flag metric gaps > 0.05
+
+# Input economy
+input_economy:
+  auroc_tolerance: 0.02          # minimal set must be within this of combined
+  calibration_tolerance: 0.05    # slope within 0.95, 1.05, ECE <= combined + 0.02
+
+# Tasks to evaluate
+tasks:
+  - name: aki_stage1_24h
+    outcome: kdigo_stage1
+    horizon_hours: 24
+  - name: aki_stage1_48h
+    outcome: kdigo_stage1
+    horizon_hours: 48
+  - name: aki_stage2_24h
+    outcome: kdigo_stage2
+    horizon_hours: 24
+  - name: aki_stage2_48h
+    outcome: kdigo_stage2
+    horizon_hours: 48
+
+# Feature families to train across
+feature_families_to_train:
+  - vitals_only
+  - labs_only
+  - combined
+  - renal_excluded
