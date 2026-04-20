@@ -135,7 +135,9 @@ def _build_demographic_columns(conn: duckdb.DuckDBPyConnection, cfg: Config) -> 
 
     # Keep all categories so fairness evaluation can index them
     eth_ohe = pd.get_dummies(c["ethnicity_group"], prefix="eth", dtype=int)
-    out = pd.concat([c[["stay_id", "age", "sex_male"]], eth_ohe], axis=1)
+    # ``cohort.landmarks`` already carries age/sex/ethnicity for each row.
+    # Keep only encoded columns here to avoid pandas creating age_x/age_y.
+    out = pd.concat([c[["stay_id", "sex_male"]], eth_ohe], axis=1)
     return out
 
 

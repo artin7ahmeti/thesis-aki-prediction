@@ -1,8 +1,11 @@
-"""KDIGO concept builder.
+"""KDIGO concept and landmark-label builders.
 
-Runs the concept SQLs in order and exports the label table.
-The KDIGO logic itself lives in sql/concepts/*.sql — this module only
-orchestrates execution and parquet export.
+The KDIGO logic itself lives in ``sql/concepts/*.sql`` and
+``sql/labels/*.sql``. This module only orchestrates execution and parquet
+export so the pipeline order stays explicit:
+
+1. concepts.aki_onset must exist before cohort/landmarks are built
+2. labels.labels depends on cohort.landmarks
 """
 
 from __future__ import annotations
@@ -25,23 +28,39 @@ _CONCEPT_ORDER = [
     "08_aki_onset.sql",
 ]
 
+_EXPORTS = [
+    ("concepts.aki_onset", "aki_onset.parquet"),
+    ("concepts.kdigo_stages", "kdigo_stages.parquet"),
+    ("labels.labels", "labels.parquet"),
+]
+
+
+def build_kdigo_concepts(conn: duckdb.DuckDBPyConnection, cfg: Config | None = None) -> None:
+    """Execute KDIGO concept SQLs through ``concepts.aki_onset``."""
+    for fname in _CONCEPT_ORDER:
+        run_sql_file(conn, paths.sql / "concepts" / fname)
+    _ = cfg
+
+
+def build_landmark_labels(conn: duckdb.DuckDBPyConnection, cfg: Config) -> None:
+    """Build landmark-level labels and export labels/concept audit tables."""
+    run_sql_file(conn, paths.sql / "labels" / "01_labels.sql")
+    _export_tables(conn, cfg, _EXPORTS)
+
 
 def build_kdigo_concepts_and_labels(conn: duckdb.DuckDBPyConnection, cfg: Config) -> None:
     """Execute concept + label SQL and export curated parquet files."""
-    # Concepts must run before cohort (cohort excludes prevalent AKI)
-    for fname in _CONCEPT_ORDER:
-        run_sql_file(conn, paths.sql / "concepts" / fname)
+    build_kdigo_concepts(conn, cfg)
+    build_landmark_labels(conn, cfg)
 
-    # Labels depend on cohort.landmarks (built separately)
-    run_sql_file(conn, paths.sql / "labels" / "01_labels.sql")
 
-    # Export
+def _export_tables(
+    conn: duckdb.DuckDBPyConnection,
+    cfg: Config,
+    tables: list[tuple[str, str]],
+) -> None:
     cfg.curated_dir.mkdir(parents=True, exist_ok=True)
-    for tbl, rel in [
-        ("concepts.aki_onset",      "aki_onset.parquet"),
-        ("concepts.kdigo_stages",   "kdigo_stages.parquet"),
-        ("labels.labels",           "labels.parquet"),
-    ]:
+    for tbl, rel in tables:
         out_path = cfg.curated_dir / rel
         conn.execute(f"COPY {tbl} TO '{out_path}' (FORMAT PARQUET, COMPRESSION ZSTD)")
         n = conn.execute(f"SELECT COUNT(*) FROM {tbl}").fetchone()[0]

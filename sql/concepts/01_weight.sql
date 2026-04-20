@@ -2,7 +2,7 @@
 -- Best-available patient weight per ICU stay, in kg.
 -- Priority order:
 --   1. inputevents.patientweight (recorded during med administration)
---   2. chartevents weight items (daily weight 224639, admit weight 226512)
+--   2. chartevents weight items (kg items first, lb item converted to kg)
 --   3. NULL  (caller must handle, UO /kg/h features will be missing)
 
 CREATE OR REPLACE TABLE concepts.patient_weight_kg AS
@@ -16,14 +16,33 @@ weight_input AS (
       AND patientweight BETWEEN 30 AND 300
     GROUP BY stay_id
 ),
-weight_chart AS (
+weight_chart_kg AS (
     SELECT
         stay_id,
         AVG(valuenum) AS weight_kg
     FROM mimic_icu.chartevents
-    WHERE itemid IN (224639, 226512, 226531)   -- Daily Weight, Admit Wt, Admission Wt (lb)
+    WHERE itemid IN (224639, 226512)   -- Daily Weight, Admit Wt (kg)
       AND valuenum IS NOT NULL
       AND valuenum BETWEEN 30 AND 300
+    GROUP BY stay_id
+),
+weight_chart_lb AS (
+    SELECT
+        stay_id,
+        AVG(valuenum / 2.20462) AS weight_kg
+    FROM mimic_icu.chartevents
+    WHERE itemid = 226531   -- Admission Wt (lb)
+      AND valuenum IS NOT NULL
+      AND valuenum BETWEEN 66 AND 660
+    GROUP BY stay_id
+),
+weight_chart AS (
+    SELECT stay_id, AVG(weight_kg) AS weight_kg
+    FROM (
+        SELECT stay_id, weight_kg FROM weight_chart_kg
+        UNION ALL
+        SELECT stay_id, weight_kg FROM weight_chart_lb
+    )
     GROUP BY stay_id
 )
 SELECT

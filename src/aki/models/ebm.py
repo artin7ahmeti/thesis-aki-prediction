@@ -31,6 +31,7 @@ class EBMModel(BaseModel):
             "min_samples_leaf":      self.params.get("min_samples_leaf", 2),
             "outer_bags":            self.params.get("outer_bags", 8),
             "random_state":          self.params.get("random_state", 42),
+            "n_jobs":                int(self.params.get("n_jobs", 1)),
         }
         self.feature_names_ = list(X.columns)
         self.estimator_ = ExplainableBoostingClassifier(**params)

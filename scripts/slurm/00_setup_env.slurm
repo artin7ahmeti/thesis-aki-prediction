@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Komondor: venv bootstrap.
-# Creates $AKI_VENV from cray-python/3.11.7 and installs the package in editable 
-# mode with all extras.
+# Creates $AKI_VENV from cray-python/3.11.7 and installs the package in editable
+# mode with dev tools. Sequence-model extras are intentionally not installed
+# for the tabular smoke/full pipeline.
 # Re-run any time pyproject.toml changes.
 
 #SBATCH --job-name=aki-setup
@@ -26,18 +27,31 @@ module purge
 module load "$AKI_PY_MODULE"
 
 echo "[setup] python: $(which python)  version: $(python --version)"
-echo "[setup] creating venv at $AKI_VENV"
+echo "[setup] creating isolated venv at $AKI_VENV"
 
-python -m venv --system-site-packages "$AKI_VENV"
+python -m venv --clear "$AKI_VENV"
 # shellcheck disable=SC1091
 source "$AKI_VENV/bin/activate"
 
 python -m pip install --upgrade pip wheel setuptools
 
-# Editable install + all extras (notebooks/dev/sequence).
-# --no-cache-dir keeps the venv inode footprint down.
-python -m pip install --no-cache-dir -e ".[all]"
+# Editable install + dev tools. --no-cache-dir keeps the venv inode footprint down.
+python -m pip install --no-cache-dir -e ".[dev]"
 
-python -c "import aki, duckdb, lightgbm, interpret, optuna, shap, mlflow; print('imports ok')"
+python - <<'PY'
+import scipy
+import scipy.sparse
+
+import aki
+import duckdb
+import interpret
+import lightgbm
+import mlflow
+import optuna
+import shap
+
+assert hasattr(scipy.sparse, "sparray"), scipy.__version__
+print("imports ok")
+PY
 
 echo "[setup] done — venv ready at $AKI_VENV"

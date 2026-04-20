@@ -154,7 +154,11 @@ def _train_one(
         model = _fit(model_name, model_params, X_tr, y_tr, X_va, y_va, tr)
 
         cal_method = cfg.models.get("calibration", {}).get("method", "isotonic")
-        if model_name in cfg.models.get("calibration", {}).get("apply_to", []):
+        calibrate_models = cfg.models.get("calibration", {}).get("apply_to", [])
+        should_calibrate = model_name in calibrate_models or (
+            model_name == "scorecard" and "sparse_logistic" in calibrate_models
+        )
+        if should_calibrate:
             model.calibrate(X_va, y_va, method=cal_method)
 
         p_va = model.predict_proba(X_va)

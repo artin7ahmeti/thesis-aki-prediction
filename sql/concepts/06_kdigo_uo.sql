@@ -83,6 +83,7 @@ SELECT
     -- KDIGO UO stage
     CASE
         WHEN weight_kg IS NULL THEN NULL
+        WHEN n_obs_12h >= 12 AND uo_12h_ml = 0 THEN 3
         WHEN n_obs_24h >= 12 AND uo_24h_ml / (weight_kg * 24) < 0.3 THEN 3
         WHEN n_obs_12h >= 6  AND uo_12h_ml / (weight_kg * 12) < 0.5 THEN 2
         WHEN n_obs_6h  >= 3  AND uo_6h_ml  / (weight_kg *  6) < 0.5 THEN 1

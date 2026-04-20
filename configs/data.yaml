@@ -27,4 +27,4 @@ mimic_iv:
 duckdb:
   memory_limit: "32GB"
   threads: 8
-  temp_directory: "data/.duckdb_tmp"
+  temp_directory: "${AKI_DUCKDB_TEMP_DIR:-data/.duckdb_tmp}"

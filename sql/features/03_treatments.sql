@@ -9,7 +9,7 @@
 --   loop_diuretic_24h       : 1 if loop diuretic administered
 --   mech_vent_24h           : 1 if invasive/NI vent setting present
 --   fluid_input_ml_6h/12h/24h : summed inputevents.amount (mL-like)
---   urine_output_ml_6h/12h/24h: summed outputevents.value
+--   urine_output_ml_6h/12h/24h: net summed outputevents.value
 --
 -- All windowed strictly to times <= landmark.
 
@@ -71,12 +71,21 @@ urine_out AS (
     SELECT
         l.stay_id,
         l.landmark_time,
-        SUM(CASE WHEN o.charttime BETWEEN l.landmark_time - INTERVAL  6 HOUR AND l.landmark_time
-                 THEN o.value END) AS urine_output_ml_6h,
-        SUM(CASE WHEN o.charttime BETWEEN l.landmark_time - INTERVAL 12 HOUR AND l.landmark_time
-                 THEN o.value END) AS urine_output_ml_12h,
-        SUM(CASE WHEN o.charttime BETWEEN l.landmark_time - INTERVAL 24 HOUR AND l.landmark_time
-                 THEN o.value END) AS urine_output_ml_24h
+        GREATEST(
+            COALESCE(SUM(CASE WHEN o.charttime BETWEEN l.landmark_time - INTERVAL  6 HOUR AND l.landmark_time
+                     THEN CASE WHEN o.itemid = 227488 THEN -o.value ELSE o.value END END), 0),
+            0
+        ) AS urine_output_ml_6h,
+        GREATEST(
+            COALESCE(SUM(CASE WHEN o.charttime BETWEEN l.landmark_time - INTERVAL 12 HOUR AND l.landmark_time
+                     THEN CASE WHEN o.itemid = 227488 THEN -o.value ELSE o.value END END), 0),
+            0
+        ) AS urine_output_ml_12h,
+        GREATEST(
+            COALESCE(SUM(CASE WHEN o.charttime BETWEEN l.landmark_time - INTERVAL 24 HOUR AND l.landmark_time
+                     THEN CASE WHEN o.itemid = 227488 THEN -o.value ELSE o.value END END), 0),
+            0
+        ) AS urine_output_ml_24h
     FROM cohort.landmarks l
     LEFT JOIN mimic_icu.outputevents o
            ON o.stay_id = l.stay_id

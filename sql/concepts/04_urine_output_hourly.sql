@@ -12,7 +12,10 @@ WITH uo_raw AS (
     SELECT
         stay_id,
         date_trunc('hour', charttime) AS uo_hour,
-        SUM(value) AS uo_ml
+        GREATEST(
+            COALESCE(SUM(CASE WHEN itemid = 227488 THEN -value ELSE value END), 0),
+            0
+        ) AS uo_ml
     FROM mimic_icu.outputevents
     WHERE itemid IN (
         226559,  -- Foley

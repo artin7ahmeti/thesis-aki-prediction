@@ -16,6 +16,11 @@ import numpy as np
 import pandas as pd
 from sklearn.calibration import CalibratedClassifierCV
 
+try:  # scikit-learn >=1.6 replaces cv="prefit" with FrozenEstimator.
+    from sklearn.frozen import FrozenEstimator
+except Exception:  # pragma: no cover - older scikit-learn fallback
+    FrozenEstimator = None
+
 # Columns that are metadata or label columns and must never be fed to a model.
 META_COLS: tuple[str, ...] = (
     "stay_id", "subject_id", "landmark_time",
@@ -99,7 +104,10 @@ class BaseModel(ABC):
     ) -> BaseModel:
         """Prefit isotonic/Platt calibration on the validation split."""
         self._ensure_fitted()
-        cal = CalibratedClassifierCV(self.estimator_, method=method, cv="prefit")
+        if FrozenEstimator is not None:
+            cal = CalibratedClassifierCV(FrozenEstimator(self.estimator_), method=method)
+        else:
+            cal = CalibratedClassifierCV(self.estimator_, method=method, cv="prefit")
         cal.fit(X_val[self.feature_names_], y_val)
         self.calibrator_ = cal
         return self

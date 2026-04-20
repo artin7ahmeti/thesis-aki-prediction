@@ -13,6 +13,7 @@ ebm:
   early_stopping_rounds: 50
   min_samples_leaf: 2
   outer_bags: 8                  # ensemble size, better uncertainty estimates
+  n_jobs: ${SLURM_CPUS_PER_TASK:-8}
 
 sparse_logistic:
   # L1-regularized scorecard, selection via path + refit
