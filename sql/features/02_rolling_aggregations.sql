@@ -44,6 +44,8 @@ SELECT
     landmark_time,
     window_h,
     feature_name,
+    MIN(t) AS earliest_event_time,
+    MAX(t) AS latest_event_time,
     COUNT(value) AS n_count,
     AVG(value) AS mean_val,
     STDDEV_SAMP(value) AS std_val,

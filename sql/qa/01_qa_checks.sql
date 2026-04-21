@@ -37,14 +37,22 @@ SELECT
     AVG(y_cr_only_stage1_48h)                          AS prev_cr_only_48h
 FROM labels.labels;
 
--- Leakage guard: no landmark should have feature data after it
+-- Leakage guard: rolling feature rows must be built only from events inside
+-- their declared retrospective window. Raw future events after a landmark are
+-- expected; only events used in features would be leakage.
 CREATE OR REPLACE VIEW qa.leakage_check AS
 SELECT
-    SUM(CASE WHEN e.t > l.landmark_time THEN 1 ELSE 0 END) AS n_leakage_events
-FROM features.numeric_events e
-JOIN cohort.landmarks l USING (stay_id)
-WHERE e.t > l.landmark_time
-LIMIT 1;
+    COUNT(*) AS n_rolling_rows,
+    SUM(CASE WHEN latest_event_time > landmark_time THEN 1 ELSE 0 END)
+        AS n_future_feature_rows,
+    SUM(
+        CASE
+            WHEN earliest_event_time <= landmark_time - (window_h || ' hours')::INTERVAL
+            THEN 1 ELSE 0
+        END
+    ) AS n_before_window_feature_rows,
+    MAX(latest_event_time - landmark_time) AS max_future_offset
+FROM features.rolling_aggregations;
 
 -- Baseline-creatinine coverage (what fraction of stays have a baseline)
 CREATE OR REPLACE VIEW qa.baseline_coverage AS
@@ -54,6 +62,16 @@ SELECT
     SUM(CASE WHEN baseline_7d   IS NOT NULL THEN 1 END)     AS n_7d_baseline,
     SUM(CASE WHEN baseline_365d IS NOT NULL THEN 1 END)     AS n_365d_baseline
 FROM concepts.creatinine_baseline;
+
+-- Same baseline coverage restricted to the eligible modeling cohort.
+CREATE OR REPLACE VIEW qa.cohort_baseline_coverage AS
+SELECT
+    COUNT(*)                                                AS n_stays,
+    SUM(CASE WHEN b.baseline_mg_dl IS NOT NULL THEN 1 END)  AS n_with_baseline,
+    SUM(CASE WHEN b.baseline_7d   IS NOT NULL THEN 1 END)   AS n_7d_baseline,
+    SUM(CASE WHEN b.baseline_365d IS NOT NULL THEN 1 END)   AS n_365d_baseline
+FROM cohort.cohort c
+LEFT JOIN concepts.creatinine_baseline b USING (stay_id);
 
 -- Patient overlap between splits (must be zero)
 CREATE OR REPLACE VIEW qa.split_patient_overlap AS

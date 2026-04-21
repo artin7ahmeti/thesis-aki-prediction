@@ -108,20 +108,11 @@ def cmd_features() -> None:
 @app.command("qa")
 def cmd_qa() -> None:
     """Run QA views and log row counts."""
+    from aki.qa.checks import run_qa_checks
+
     cfg = load_configs()
     with _duckdb_session(cfg) as conn:
-        run_sql_file(conn, paths.sql / "qa" / "01_qa_checks.sql")
-        for view in (
-            "qa.cohort_summary",
-            "qa.landmark_summary",
-            "qa.label_prevalence",
-            "qa.leakage_check",
-            "qa.baseline_coverage",
-        ):
-            df = conn.execute(f"SELECT * FROM {view}").df()
-            out = paths.tables / f"{view.replace('.', '__')}.csv"
-            df.to_csv(out, index=False)
-            typer.echo(f"  {view}: {len(df):,} rows -> {out}")
+        run_qa_checks(conn, cfg)
 
 
 # Modeling stages
