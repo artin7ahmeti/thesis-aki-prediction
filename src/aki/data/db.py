@@ -81,6 +81,109 @@ def render_sql(sql: str, params: dict[str, Any]) -> str:
     return _VAR_PATTERN.sub(_sub, sql)
 
 
+def _strip_line_comments(sql: str) -> str:
+    """Remove ``--`` comments without touching quoted string literals."""
+    out: list[str] = []
+    in_single = False
+    in_double = False
+    i = 0
+    while i < len(sql):
+        ch = sql[i]
+        nxt = sql[i + 1] if i + 1 < len(sql) else ""
+
+        if in_single:
+            out.append(ch)
+            if ch == "'" and nxt == "'":
+                out.append(nxt)
+                i += 2
+                continue
+            if ch == "'":
+                in_single = False
+            i += 1
+            continue
+
+        if in_double:
+            out.append(ch)
+            if ch == '"' and nxt == '"':
+                out.append(nxt)
+                i += 2
+                continue
+            if ch == '"':
+                in_double = False
+            i += 1
+            continue
+
+        if ch == "'":
+            in_single = True
+            out.append(ch)
+        elif ch == '"':
+            in_double = True
+            out.append(ch)
+        elif ch == "-" and nxt == "-":
+            while i < len(sql) and sql[i] not in "\r\n":
+                i += 1
+            continue
+        else:
+            out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def split_sql_statements(sql: str) -> list[str]:
+    """Split SQL into statements, ignoring semicolons in comments/strings."""
+    sql = _strip_line_comments(sql)
+    statements: list[str] = []
+    current: list[str] = []
+    in_single = False
+    in_double = False
+    i = 0
+    while i < len(sql):
+        ch = sql[i]
+        nxt = sql[i + 1] if i + 1 < len(sql) else ""
+
+        if in_single:
+            current.append(ch)
+            if ch == "'" and nxt == "'":
+                current.append(nxt)
+                i += 2
+                continue
+            if ch == "'":
+                in_single = False
+            i += 1
+            continue
+
+        if in_double:
+            current.append(ch)
+            if ch == '"' and nxt == '"':
+                current.append(nxt)
+                i += 2
+                continue
+            if ch == '"':
+                in_double = False
+            i += 1
+            continue
+
+        if ch == "'":
+            in_single = True
+            current.append(ch)
+        elif ch == '"':
+            in_double = True
+            current.append(ch)
+        elif ch == ";":
+            stmt = "".join(current).strip()
+            if stmt:
+                statements.append(stmt)
+            current = []
+        else:
+            current.append(ch)
+        i += 1
+
+    tail = "".join(current).strip()
+    if tail:
+        statements.append(tail)
+    return statements
+
+
 def run_sql_file(
     conn: duckdb.DuckDBPyConnection,
     sql_path: Path,
@@ -91,12 +194,16 @@ def run_sql_file(
     DuckDB's ``execute`` accepts multi-statement strings — we split on
     semicolons at end-of-line to get per-statement logging.
     """
-    logger.info(f"SQL: {sql_path.relative_to(paths.root)}")
+    try:
+        log_path = sql_path.relative_to(paths.root)
+    except ValueError:
+        log_path = sql_path
+    logger.info(f"SQL: {log_path}")
     text = sql_path.read_text(encoding="utf-8")
     if params:
         text = render_sql(text, params)
 
-    statements = [s.strip() for s in text.split(";") if s.strip() and not s.strip().startswith("--")]
+    statements = split_sql_statements(text)
     for i, stmt in enumerate(statements):
         try:
             conn.execute(stmt)
