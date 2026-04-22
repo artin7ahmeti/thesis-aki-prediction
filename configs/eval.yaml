@@ -41,7 +41,9 @@ fairness:
 # Input economy
 input_economy:
   auroc_tolerance: 0.02          # minimal set must be within this of combined
-  calibration_tolerance: 0.05    # slope within 0.95, 1.05, ECE <= combined + 0.02
+  calibration_tolerance: 0.05    # minimal calibration slope error must be <= 0.05
+  ece_tolerance: 0.02            # minimal ECE must be <= combined ECE + this
+  net_benefit_tolerance: 0.0     # minimal net benefit must not be worse at clinical thresholds
 
 # Tasks to evaluate
 tasks:

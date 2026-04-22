@@ -95,12 +95,69 @@ def _write_best_per_task(df: pd.DataFrame, out: Path) -> None:
 def _write_input_economy_table(df: pd.DataFrame, out: Path, cfg: Config) -> None:
     if "minimal" not in df["family"].unique() or "combined" not in df["family"].unique():
         return
-    tol = float(cfg.eval["input_economy"]["auroc_tolerance"])
-    pivot = df.pivot_table(
-        index=["task", "model"], columns="family", values="auroc"
-    ).reset_index()
-    if "minimal" not in pivot.columns or "combined" not in pivot.columns:
+
+    gate_cfg = cfg.eval["input_economy"]
+    auroc_tol = float(gate_cfg["auroc_tolerance"])
+    slope_tol = float(gate_cfg.get("calibration_tolerance", 0.05))
+    ece_tol = float(gate_cfg.get("ece_tolerance", 0.02))
+    nb_tol = float(gate_cfg.get("net_benefit_tolerance", 0.0))
+
+    metrics = ["auroc", "calibration_slope", "ece"]
+    combined = df[df["family"] == "combined"][["task", "model", *metrics]]
+    minimal = df[df["family"] == "minimal"][["task", "model", *metrics]]
+    merged = combined.merge(
+        minimal, on=["task", "model"], suffixes=("_combined", "_minimal")
+    )
+    if merged.empty:
         return
-    pivot["delta"] = pivot["combined"] - pivot["minimal"]
-    pivot["passes_gate"] = pivot["delta"] <= tol
-    pivot.to_csv(out, index=False)
+
+    merged["delta_auroc"] = merged["auroc_combined"] - merged["auroc_minimal"]
+    merged["delta_ece"] = merged["ece_minimal"] - merged["ece_combined"]
+    merged["minimal_slope_error"] = (merged["calibration_slope_minimal"] - 1.0).abs()
+    merged["passes_auroc"] = merged["delta_auroc"] <= auroc_tol
+    merged["passes_calibration"] = (
+        (merged["minimal_slope_error"] <= slope_tol)
+        & (merged["delta_ece"] <= ece_tol)
+    )
+
+    thresholds = [float(t) for t in cfg.eval["decision_curve"]["clinical_thresholds"]]
+    for threshold in thresholds:
+        col = f"delta_net_benefit_at_{threshold:g}"
+        merged[col] = merged.apply(
+            lambda r, threshold=threshold: _net_benefit_delta(
+                r["task"], r["model"], threshold,
+            ),
+            axis=1,
+        )
+    nb_cols = [c for c in merged.columns if c.startswith("delta_net_benefit_at_")]
+    if nb_cols:
+        merged["passes_decision_curve"] = merged[nb_cols].ge(-nb_tol).all(axis=1)
+    else:
+        merged["passes_decision_curve"] = True
+
+    merged["passes_gate"] = (
+        merged["passes_auroc"]
+        & merged["passes_calibration"]
+        & merged["passes_decision_curve"]
+    )
+    merged.to_csv(out, index=False)
+
+
+def _net_benefit_delta(task: str, model: str, threshold: float) -> float:
+    """Return minimal - combined net benefit at the nearest saved threshold."""
+    combined = _net_benefit_at(task, "combined", model, threshold)
+    minimal = _net_benefit_at(task, "minimal", model, threshold)
+    if pd.isna(combined) or pd.isna(minimal):
+        return float("nan")
+    return float(minimal - combined)
+
+
+def _net_benefit_at(task: str, family: str, model: str, threshold: float) -> float:
+    dc_path = (
+        paths.tables / "per_model" / f"{task}__{family}__{model}" / "decision_curve.csv"
+    )
+    if not dc_path.exists():
+        return float("nan")
+    dc = pd.read_csv(dc_path)
+    idx = (dc["threshold"] - threshold).abs().idxmin()
+    return float(dc.loc[idx, "nb_model"])

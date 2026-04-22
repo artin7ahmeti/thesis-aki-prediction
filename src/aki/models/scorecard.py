@@ -17,6 +17,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+from sklearn import __version__ as sklearn_version
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import GroupKFold
@@ -44,7 +45,11 @@ class ScorecardModel(BaseModel):
         seed      = int(self.params.get("random_state", 42))
 
         self.feature_names_ = list(X.columns)
-        best_C = self._select_C(X, y, groups, C_grid, max_iter, class_weight, seed)
+        best_C = (
+            float(C_grid[0])
+            if len(C_grid) == 1
+            else self._select_C(X, y, groups, C_grid, max_iter, class_weight, seed)
+        )
 
         # Path fit at the selected C -> identify non-zero features
         path_pipe = self._make_pipeline(
@@ -135,12 +140,32 @@ class ScorecardModel(BaseModel):
     def _make_pipeline(
         penalty: str, C: float, max_iter: int, class_weight: Any, seed: int,
     ) -> Pipeline:
+        clf_kwargs: dict[str, Any] = {
+            "C": C,
+            "solver": "saga",
+            "max_iter": max_iter,
+            "class_weight": class_weight,
+            "random_state": seed,
+        }
+        if _sklearn_ge_18():
+            # scikit-learn 1.8 deprecates `penalty=` in favor of l1_ratio.
+            clf_kwargs["l1_ratio"] = 1.0 if penalty == "l1" else 0.0
+        else:
+            clf_kwargs["penalty"] = penalty
+
         return Pipeline([
             ("impute", SimpleImputer(strategy="median")),
             ("scale",  StandardScaler(with_mean=True, with_std=True)),
-            ("clf", LogisticRegression(
-                penalty=penalty, C=C, solver="saga",
-                max_iter=max_iter, class_weight=class_weight,
-                random_state=seed,
-            )),
+            ("clf", LogisticRegression(**clf_kwargs)),
         ])
+
+
+def _sklearn_ge_18() -> bool:
+    """Return True for scikit-learn >= 1.8 without adding a packaging dep."""
+    parts: list[int] = []
+    for token in sklearn_version.split(".")[:2]:
+        digits = "".join(ch for ch in token if ch.isdigit())
+        parts.append(int(digits) if digits else 0)
+    while len(parts) < 2:
+        parts.append(0)
+    return tuple(parts) >= (1, 8)

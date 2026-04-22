@@ -20,8 +20,9 @@ aki_activate
 # Derive minimal feature family from the EBM importance on `combined`.
 aki minimal
 
-# Train EBM/scorecard/LightGBM on the minimal family using cached tuned params 
-# from the 02_tune_array run.
+# Train EBM/scorecard/LightGBM on the minimal family using cached tuned params
+# where available. EBM/LightGBM params come from the main array; scorecard uses
+# the configured sparse-logistic path unless you have separately cached params.
 python - <<'PY'
 from aki.models.train import train_all
 from aki.utils.config import load_configs

@@ -12,8 +12,6 @@ For every trained artifact under ``reports/artifacts/models/``:
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import mlflow
 import pandas as pd
 from loguru import logger
@@ -134,19 +132,29 @@ def _input_economy_gate(summary: pd.DataFrame, cfg: Config) -> pd.DataFrame:
     Returns an empty frame if the ``minimal`` family hasn't been trained.
     """
     gate_cfg = cfg.eval["input_economy"]
-    tol = float(gate_cfg["auroc_tolerance"])
+    auroc_tol = float(gate_cfg["auroc_tolerance"])
+    slope_tol = float(gate_cfg.get("calibration_tolerance", 0.05))
+    ece_tol = float(gate_cfg.get("ece_tolerance", 0.02))
 
     if "minimal" not in summary["family"].unique():
         return pd.DataFrame()
 
-    combined = summary[summary["family"] == "combined"][["task", "model", "auroc"]]
-    minimal  = summary[summary["family"] == "minimal"][["task", "model", "auroc"]]
+    metrics = ["task", "model", "auroc", "calibration_slope", "ece"]
+    combined = summary[summary["family"] == "combined"][metrics]
+    minimal  = summary[summary["family"] == "minimal"][metrics]
 
     merged = combined.merge(
         minimal, on=["task", "model"], suffixes=("_combined", "_minimal")
     )
-    merged["delta"] = merged["auroc_combined"] - merged["auroc_minimal"]
-    merged["passes_gate"] = merged["delta"] <= tol
+    merged["delta_auroc"] = merged["auroc_combined"] - merged["auroc_minimal"]
+    merged["delta_ece"] = merged["ece_minimal"] - merged["ece_combined"]
+    merged["minimal_slope_error"] = (merged["calibration_slope_minimal"] - 1.0).abs()
+    merged["passes_auroc"] = merged["delta_auroc"] <= auroc_tol
+    merged["passes_calibration"] = (
+        (merged["minimal_slope_error"] <= slope_tol)
+        & (merged["delta_ece"] <= ece_tol)
+    )
+    merged["passes_gate"] = merged["passes_auroc"] & merged["passes_calibration"]
     return merged
 
 

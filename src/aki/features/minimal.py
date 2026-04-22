@@ -44,28 +44,17 @@ def derive_minimal_family(cfg: Config, source_family: str = "combined") -> Path:
         )
     df = pd.read_parquet(combined_path)
 
-    # Rank across every EBM we trained on the source family; take the union
-    # of top-k features per task so the minimal family remains stable
-    # across 24h/48h and stage-1/stage-2 outcomes.
-    chosen: list[str] = []
-    for art in _ebm_artifacts(source_family):
-        ranked = _rank_univariate_terms(art)
-        for feat in ranked:
-            if feat in chosen:
-                continue
-            if feat in df.columns:
-                chosen.append(feat)
-            if len(chosen) >= k:
-                break
-        if len(chosen) >= k:
-            break
-
-    if not chosen:
+    artifacts = _ebm_artifacts(source_family)
+    importance = _aggregate_univariate_importance(artifacts, available=set(df.columns))
+    if importance.empty:
         raise RuntimeError(
             "No EBM artifacts found. Run `aki train` on the combined family first."
         )
 
+    chosen = importance["feature"].head(k).tolist()
     logger.info(f"minimal family (top-{k}): {chosen}")
+    _write_selection_table(importance, chosen, source_family)
+
     meta_cols = _meta_and_label_cols(df)
     demo_cols = ["age", "sex_male"] + [c for c in df.columns if c.startswith("eth_")]
     keep = list(dict.fromkeys(meta_cols + demo_cols + chosen))
@@ -91,6 +80,11 @@ def _ebm_artifacts(family: str) -> list[ModelArtifact]:
 
 def _rank_univariate_terms(art: ModelArtifact) -> list[str]:
     """Return univariate feature names from an EBM artifact, sorted by |importance|."""
+    return [feature for feature, _score in _univariate_term_scores(art)]
+
+
+def _univariate_term_scores(art: ModelArtifact) -> list[tuple[str, float]]:
+    """Return univariate EBM terms with absolute global-importance scores."""
     expl = art.estimator.explain_global()
     data = expl.data()
     terms = list(data["names"])
@@ -98,11 +92,72 @@ def _rank_univariate_terms(art: ModelArtifact) -> list[str]:
 
     # Univariate term names match feature columns; interactions contain "&" or " x "
     return [
-        term for term, _ in sorted(
-            zip(terms, scores), key=lambda kv: -abs(kv[1])
+        (term, abs(float(score))) for term, score in sorted(
+            zip(terms, scores, strict=True),
+            key=lambda kv: (-abs(float(kv[1])), kv[0]),
         )
         if "&" not in term and " x " not in term
     ]
+
+
+def _aggregate_univariate_importance(
+    artifacts: list[ModelArtifact],
+    available: set[str],
+) -> pd.DataFrame:
+    """Average EBM univariate importance across all source-family tasks."""
+    rows: list[dict] = []
+    for art in artifacts:
+        for rank, (feature, score) in enumerate(_univariate_term_scores(art), start=1):
+            if feature not in available:
+                continue
+            rows.append({
+                "task": art.task,
+                "family": art.family,
+                "model": art.name,
+                "feature": feature,
+                "abs_importance": score,
+                "rank": rank,
+            })
+
+    if not rows:
+        return pd.DataFrame(columns=[
+            "feature", "mean_abs_importance", "max_abs_importance",
+            "n_artifacts", "best_rank",
+        ])
+
+    raw = pd.DataFrame(rows)
+    summary = (
+        raw.groupby("feature", as_index=False)
+        .agg(
+            mean_abs_importance=("abs_importance", "mean"),
+            max_abs_importance=("abs_importance", "max"),
+            n_artifacts=("task", "nunique"),
+            best_rank=("rank", "min"),
+        )
+        .sort_values(
+            ["mean_abs_importance", "n_artifacts", "best_rank", "feature"],
+            ascending=[False, False, True, True],
+            ignore_index=True,
+        )
+    )
+    return summary
+
+
+def _write_selection_table(
+    importance: pd.DataFrame,
+    chosen: list[str],
+    source_family: str,
+) -> Path:
+    out = paths.tables / "minimal_feature_selection.csv"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    table = importance.copy()
+    chosen_order = {feature: i + 1 for i, feature in enumerate(chosen)}
+    table["selected"] = table["feature"].isin(chosen)
+    table["selected_rank"] = table["feature"].map(chosen_order)
+    table["source_family"] = source_family
+    table.to_csv(out, index=False)
+    logger.info(f"minimal feature selection table -> {out}")
+    return out
 
 
 def _meta_and_label_cols(df: pd.DataFrame) -> list[str]:

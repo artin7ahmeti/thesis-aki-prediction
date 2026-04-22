@@ -42,15 +42,15 @@ cd /project/pr_2026/aki
 # 1. preprocess
 prep=$(sbatch --parsable scripts/slurm/01_preprocess.slurm)
 
-# 2. smoke test - 10 Optuna trials on one (task, family, model)
+# 2. smoke test - 1 Optuna trial on one (task, family, model)
 sbatch --dependency=afterok:$prep scripts/slurm/smoke_test.slurm
 ```
 
-Default combo is `aki_stage1_24h + combined + lightgbm` with 10 trials.
+Default combo is `aki_stage1_24h + combined + lightgbm` with 1 trial.
 Override via env:
 
 ```bash
-SMOKE_MODEL=ebm SMOKE_TRIALS=5 \
+SMOKE_MODEL=ebm SMOKE_TRIALS=1 \
     sbatch --dependency=afterok:$prep scripts/slurm/smoke_test.slurm
 ```
 
@@ -71,19 +71,42 @@ cd /project/pr_2026/aki
 # 1. Preprocess: stage -> cohort -> labels -> features -> qa -> drift
 prep_id=$(sbatch --parsable scripts/slurm/01_preprocess.slurm)
 
-# 2. Optuna HPO sweep (48 array slots, 12 concurrent)
+# 2. Main Optuna HPO sweep: EBM + LightGBM only
+#    4 tasks x 4 feature families x 2 models = 32 array slots.
 tune_id=$(sbatch --parsable \
     --dependency=afterok:$prep_id \
     scripts/slurm/02_tune_array.slurm)
 
-# 3. Minimal family -> minimal train -> evaluate -> explain -> report
-sbatch --dependency=afterok:$tune_id scripts/slurm/03_evaluate.slurm
+# 3. Optional sparse-scorecard baselines on small/readable families.
+#    Do not run scorecard over every wide family by default.
+score_id=$(sbatch --parsable \
+    --dependency=afterok:$prep_id \
+    scripts/slurm/02_scorecard_array.slurm)
+
+# 4. Minimal family -> minimal train -> evaluate -> explain -> report.
+#    Depend on both arrays if you want scorecard rows included in final tables.
+sbatch --dependency=afterok:$tune_id:$score_id scripts/slurm/03_evaluate.slurm
 ```
 
 Override the trial budget:
 
 ```bash
-sbatch --export=ALL,N_TRIALS=200 scripts/slurm/02_tune_array.slurm
+sbatch --export=ALL,N_TRIALS=20 scripts/slurm/02_tune_array.slurm
+```
+
+Use a two-pass strategy: run `N_TRIALS=2` first to confirm all 32 main
+array slots finish cleanly, then increase to `N_TRIALS=20` for the first
+full thesis sweep. This protects the CPU-hour budget while still giving
+Optuna enough room once the wiring is proven. Only increase beyond 20 for
+targeted high-value combinations after reviewing the first sweep.
+
+The scorecard array defaults to no Optuna tuning and `vitals_only` because
+that model is intended as a concise clinical score sheet. If you deliberately
+want scorecard tuning after the fast implementation has been validated:
+
+```bash
+sbatch --export=ALL,SCORECARD_TUNE=true,N_TRIALS=5 \
+    scripts/slurm/02_scorecard_array.slurm
 ```
 
 ## Monitoring
