@@ -32,23 +32,32 @@ def plot_ebm_shapes(
         if d is None:
             continue
         fig, ax = plt.subplots(figsize=(6, 3.5))
-        names  = np.asarray(d.get("names", []))
-        values = np.asarray(d.get("scores", []))
-        lower  = np.asarray(d.get("lower_bounds", values))
-        upper  = np.asarray(d.get("upper_bounds", values))
+        names = d.get("names", [])
+        values = np.asarray(d.get("scores", []), dtype=float)
+        lower = np.asarray(d.get("lower_bounds", values), dtype=float)
+        upper = np.asarray(d.get("upper_bounds", values), dtype=float)
 
         if values.size == 0:
             plt.close(fig)
             continue
 
-        x = np.arange(len(names)) if names.dtype.kind in ("U", "O") else names.astype(float)
-        ax.plot(x, values, color="tab:blue")
-        if lower.shape == values.shape and upper.shape == values.shape:
-            ax.fill_between(x, lower, upper, alpha=0.2, color="tab:blue")
-        ax.axhline(0.0, color="gray", linewidth=0.5)
-        ax.set_title(terms[i])
-        ax.set_ylabel("score contribution")
-        ax.set_xlabel("feature value")
+        if values.ndim == 2:
+            im = ax.imshow(values, aspect="auto", origin="lower", cmap="coolwarm")
+            fig.colorbar(im, ax=ax, label="score contribution")
+            _set_interaction_ticks(ax, names)
+            ax.set_title(terms[i])
+        else:
+            x, tick_labels = _shape_x_values(names, values)
+            ax.plot(x, values, color="tab:blue")
+            if lower.shape == values.shape and upper.shape == values.shape:
+                ax.fill_between(x, lower, upper, alpha=0.2, color="tab:blue")
+            ax.axhline(0.0, color="gray", linewidth=0.5)
+            if tick_labels is not None:
+                ax.set_xticks(x)
+                ax.set_xticklabels(tick_labels, rotation=45, ha="right")
+            ax.set_title(terms[i])
+            ax.set_ylabel("score contribution")
+            ax.set_xlabel("feature value")
         fig.tight_layout()
 
         safe_name = terms[i].replace(" ", "_").replace("/", "_").replace("&", "and")
@@ -57,6 +66,55 @@ def plot_ebm_shapes(
         plt.close(fig)
         files.append(out)
     return files
+
+
+def _shape_x_values(names, values: np.ndarray) -> tuple[np.ndarray, list[str] | None]:
+    """Return x coordinates for an EBM univariate shape.
+
+    Interpret returns continuous-term bin edges in some versions, so the
+    x-axis can be one element longer than the per-bin score vector. Plot the
+    score at bin centers in that case. Categorical terms keep integer
+    positions plus readable tick labels.
+    """
+    x_raw = np.asarray(names)
+    n = len(values)
+    if x_raw.size == 0:
+        return np.arange(n), None
+
+    try:
+        x_num = x_raw.astype(float)
+    except (TypeError, ValueError):
+        labels = [str(v) for v in x_raw[:n]]
+        labels.extend([""] * (n - len(labels)))
+        return np.arange(n), labels
+
+    if len(x_num) == n + 1:
+        return (x_num[:-1] + x_num[1:]) / 2.0, None
+    if len(x_num) == n:
+        return x_num, None
+
+    return np.arange(n), None
+
+
+def _set_interaction_ticks(ax, names) -> None:
+    """Best-effort tick labels for 2D EBM interaction heatmaps."""
+    if not isinstance(names, (list, tuple)) or len(names) != 2:
+        ax.set_xlabel("feature 1 bin")
+        ax.set_ylabel("feature 2 bin")
+        return
+
+    x_names = [str(v) for v in names[0]]
+    y_names = [str(v) for v in names[1]]
+    if x_names:
+        x_idx = np.linspace(0, len(x_names) - 1, min(6, len(x_names))).astype(int)
+        ax.set_xticks(x_idx)
+        ax.set_xticklabels([x_names[j] for j in x_idx], rotation=45, ha="right")
+    if y_names:
+        y_idx = np.linspace(0, len(y_names) - 1, min(6, len(y_names))).astype(int)
+        ax.set_yticks(y_idx)
+        ax.set_yticklabels([y_names[j] for j in y_idx])
+    ax.set_xlabel("feature 1 value")
+    ax.set_ylabel("feature 2 value")
 
 
 def plot_reliability(
