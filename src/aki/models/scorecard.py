@@ -45,7 +45,7 @@ class ScorecardModel(BaseModel):
         target_k = int(self.params.get("target_features", 10))
         max_iter = int(self.params.get("max_iter", 5000))
         class_weight = self.params.get("class_weight")
-        C_grid = list(self.params.get("C_grid", [0.01, 0.1, 1.0]))
+        C_grid = _resolve_c_grid(self.params)
         seed = int(self.params.get("random_state", 42))
         selection_tol = float(self.params.get("selection_tolerance", 0.01))
         refit_C = float(self.params.get("refit_C", 1.0))
@@ -276,6 +276,19 @@ def _feature_profiles(X: pd.DataFrame, pipe: Pipeline) -> dict[str, dict[str, An
         }
 
     return profiles
+
+
+def _resolve_c_grid(params: dict[str, Any]) -> list[float]:
+    """Return the effective L1 path for scorecard fitting.
+
+    A scalar ``C`` takes precedence over any default ``C_grid``. This lets
+    the tuned scorecard params saved by Optuna feed directly into the final
+    fit without silently falling back to the broad default path.
+    """
+    if params.get("C") is not None:
+        return [float(params["C"])]
+    raw_grid = params.get("C_grid", [0.01, 0.1, 1.0])
+    return [float(c) for c in raw_grid]
 
 
 def _sklearn_ge_18() -> bool:

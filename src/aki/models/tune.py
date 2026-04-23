@@ -160,9 +160,10 @@ def _suggest_ebm(trial: optuna.Trial, cfg: Config) -> dict[str, Any]:
 
 def _suggest_scorecard(trial: optuna.Trial, cfg: Config) -> dict[str, Any]:
     base = dict(cfg.models.get("sparse_logistic", {}))
+    tuned_C = trial.suggest_float("C", 1e-3, 1e1, log=True)
     base.update(
         {
-            "C_grid": [trial.suggest_float("C", 1e-3, 1e1, log=True)],
+            "C": tuned_C,
             "target_features": trial.suggest_int("target_features", 5, 10),
         }
     )

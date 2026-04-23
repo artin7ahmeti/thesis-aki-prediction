@@ -177,6 +177,7 @@ feature_families:
     description: "Scorecard: <=10 features, >=2% AUROC gap target"
   scorecard_primary:
     include: []
+    include_encoded_demographics: false
     selected_features:
       - age
       - urine_output_ml_6h
@@ -187,3 +188,26 @@ feature_families:
       - glucose_std_24h
       - hematocrit_max_24h
     description: "Curated primary sparse-logistic family for stage1 24h/48h scorecard development"
+  scorecard_core:
+    include: []
+    include_encoded_demographics: false
+    selected_features:
+      - age
+      - urine_output_ml_6h
+      - creatinine_max_24h
+      - map_mean_12h
+      - hematocrit_max_24h
+    description: "Core bedside scorecard without treatment proxies or encoded demographics"
+  scorecard_augmented:
+    include: []
+    include_encoded_demographics: false
+    selected_features:
+      - age
+      - urine_output_ml_6h
+      - creatinine_max_24h
+      - map_mean_12h
+      - hematocrit_max_24h
+      - loop_diuretic_24h
+      - fluid_input_ml_12h
+      - glucose_std_24h
+    description: "Augmented bedside scorecard with treatment/exposure context"

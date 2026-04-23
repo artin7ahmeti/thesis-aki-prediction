@@ -170,11 +170,17 @@ def _select_family(
 
     include = set(family_cfg.get("include", []))
     selected_features = list(family_cfg.get("selected_features", []))
+    include_encoded_demographics = bool(
+        family_cfg.get("include_encoded_demographics", True)
+    )
 
-    # Demographics are always included (for modeling + subgroup analysis)
+    # Metadata are always kept so fairness and subgroup tables can still use
+    # raw demographic variables even when a bedside family opts out of encoded
+    # demographic predictors.
     keep_cols = list(meta_cols)
-    demo_cols = ["age", "sex_male"] + [c for c in full.columns if c.startswith("eth_")]
-    keep_cols.extend(c for c in demo_cols if c not in keep_cols)
+    if include_encoded_demographics:
+        demo_cols = ["sex_male"] + [c for c in full.columns if c.startswith("eth_")]
+        keep_cols.extend(c for c in demo_cols if c not in keep_cols)
 
     vital_names = {v["name"] for v in cfg.features["vitals"]}
     vital_names.discard("temperature_f")  # merged into temperature_c

@@ -9,6 +9,7 @@ from aki.utils.config import load_configs
 def test_scorecard_primary_family_is_configured():
     cfg = load_configs()
     family = cfg.features["feature_families"]["scorecard_primary"]
+    assert family["include_encoded_demographics"] is False
     assert family["selected_features"] == [
         "age",
         "urine_output_ml_6h",
@@ -21,7 +22,34 @@ def test_scorecard_primary_family_is_configured():
     ]
 
 
-def test_select_family_supports_curated_selected_features():
+def test_scorecard_core_and_augmented_families_are_configured():
+    cfg = load_configs()
+    core = cfg.features["feature_families"]["scorecard_core"]
+    augmented = cfg.features["feature_families"]["scorecard_augmented"]
+
+    assert core["include_encoded_demographics"] is False
+    assert core["selected_features"] == [
+        "age",
+        "urine_output_ml_6h",
+        "creatinine_max_24h",
+        "map_mean_12h",
+        "hematocrit_max_24h",
+    ]
+
+    assert augmented["include_encoded_demographics"] is False
+    assert augmented["selected_features"] == [
+        "age",
+        "urine_output_ml_6h",
+        "creatinine_max_24h",
+        "map_mean_12h",
+        "hematocrit_max_24h",
+        "loop_diuretic_24h",
+        "fluid_input_ml_12h",
+        "glucose_std_24h",
+    ]
+
+
+def test_select_family_supports_curated_selected_features_without_encoded_demographics():
     cfg = load_configs()
     family_cfg = cfg.features["feature_families"]["scorecard_primary"]
     full = pd.DataFrame(
@@ -56,5 +84,7 @@ def test_select_family_supports_curated_selected_features():
 
     subset = _select_family(full, family_cfg, cfg)
     assert "extraneous_feature" not in subset.columns
+    assert "sex_male" not in subset.columns
+    assert "eth_White" not in subset.columns
     for feature in family_cfg["selected_features"]:
         assert feature in subset.columns

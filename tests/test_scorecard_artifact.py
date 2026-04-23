@@ -40,3 +40,18 @@ def test_scorecard_artifact_contains_summary_and_anchor_points(tmp_path):
     assert {"feature", "anchor", "representative_value", "points_vs_median"} <= set(points.columns)
     assert "## Feature Summary" in md
     assert "## Anchor Points" in md
+
+
+def test_scorecard_honors_scalar_tuned_c_over_default_grid():
+    X, y = _toy_binary(n=500, d=12, seed=7)
+    model = ScorecardModel(
+        {
+            "C": 0.03,
+            "C_grid": [0.001, 0.003, 0.01],
+            "target_features": 6,
+            "random_state": 0,
+        }
+    ).fit(X, y, groups=np.arange(len(X)) // 5)
+
+    assert abs(model.extra_["selected_C"] - 0.03) < 1e-12
+    assert model.extra_["C_grid"] == [0.03]
