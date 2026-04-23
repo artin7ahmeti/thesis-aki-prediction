@@ -38,10 +38,13 @@ def test_scorecard_selects_sparse_set():
     m = ScorecardModel({
         "C_grid": [0.05, 0.1],
         "target_features": 5,
+        "selection_tolerance": 0.02,
         "random_state": 0,
     }).fit(X, y, groups=np.arange(len(X)) // 3)  # synthetic patient groups
     assert len(m.feature_names_) <= 5
     assert m.estimator_ is not None
+    assert "feature_profiles" in m.extra_
+    assert set(m.feature_names_) == set(m.extra_["feature_profiles"])
     p = m.predict_proba(X)
     assert p.shape == (len(y),)
 

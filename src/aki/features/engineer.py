@@ -62,10 +62,14 @@ def build_features(conn: duckdb.DuckDBPyConnection, cfg: Config) -> None:
     out_dir = cfg.curated_dir / "features"
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    # Build every configured family parquet up front so targeted follow-up
+    # experiments (for example a curated scorecard family) do not require
+    # editing the expensive default training grid.
+    families = list(cfg.features["feature_families"].keys())
     # "combined" is always written so the minimal-family derivation step
     # has a source to mine EBM importance from, even if the training
     # config skipped it.
-    families = list(dict.fromkeys(cfg.eval["feature_families_to_train"] + ["combined"]))
+    families = list(dict.fromkeys(families + ["combined"]))
     # Skip "minimal" here, itt is derived after the first training pass.
     families = [f for f in families if f != "minimal"]
 
@@ -165,6 +169,7 @@ def _select_family(
     ]
 
     include = set(family_cfg.get("include", []))
+    selected_features = list(family_cfg.get("selected_features", []))
 
     # Demographics are always included (for modeling + subgroup analysis)
     keep_cols = list(meta_cols)
@@ -199,6 +204,14 @@ def _select_family(
         if not exclude_renal:
             tx_cols += ["urine_output_ml_6h", "urine_output_ml_12h", "urine_output_ml_24h"]
         keep_cols.extend(c for c in tx_cols if c in full.columns)
+
+    if selected_features:
+        missing_selected = [c for c in selected_features if c not in full.columns]
+        if missing_selected:
+            logger.warning(
+                f"feature family requested missing columns: {missing_selected}"
+            )
+        keep_cols.extend(c for c in selected_features if c in full.columns)
 
     # De-dup while preserving order
     seen: set[str] = set()

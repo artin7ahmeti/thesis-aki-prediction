@@ -175,3 +175,15 @@ feature_families:
     include: []                  # auto-populated: top-k by EBM importance
     max_features: 10
     description: "Scorecard: <=10 features, >=2% AUROC gap target"
+  scorecard_primary:
+    include: []
+    selected_features:
+      - age
+      - urine_output_ml_6h
+      - creatinine_max_24h
+      - loop_diuretic_24h
+      - map_mean_12h
+      - fluid_input_ml_12h
+      - glucose_std_24h
+      - hematocrit_max_24h
+    description: "Curated primary sparse-logistic family for stage1 24h/48h scorecard development"

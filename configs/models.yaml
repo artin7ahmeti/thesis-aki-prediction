@@ -21,10 +21,12 @@ sparse_logistic:
   solver: saga
   C_grid: [0.001, 0.003, 0.01, 0.03, 0.1, 0.3, 1.0, 3.0, 10.0]
   max_iter: 5000
-  class_weight: balanced
+  class_weight: null            # preserve natural prevalence; calibrate after fit
   scoring: roc_auc               # CV metric for C selection
   target_features: 10            # enforce via post-hoc selection if needed
+  selection_tolerance: 0.01      # prefer the sparsest model within 0.01 AUROC of best
   refit_on_selected: true        # drop zeroed features, refit with mild L2
+  refit_C: 1.0                   # mild L2 stabilization on the selected feature set
 
 # Nontransparent baseline
 lightgbm:

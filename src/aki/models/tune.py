@@ -163,7 +163,7 @@ def _suggest_scorecard(trial: optuna.Trial, cfg: Config) -> dict[str, Any]:
     base.update(
         {
             "C_grid": [trial.suggest_float("C", 1e-3, 1e1, log=True)],
-            "target_features": trial.suggest_int("target_features", 6, 14),
+            "target_features": trial.suggest_int("target_features", 5, 10),
         }
     )
     return base
