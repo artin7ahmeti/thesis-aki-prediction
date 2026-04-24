@@ -26,39 +26,55 @@ from aki.split.splits import assign_splits, load_split
 from aki.utils.config import Config
 from aki.utils.mlflow_utils import init_mlflow, run
 from aki.utils.paths import paths
+from aki.utils.subset import artifact_triple_from_path, matches_selector, output_path
 
 
-def evaluate_all(cfg: Config) -> pd.DataFrame:
+def evaluate_all(
+    cfg: Config,
+    *,
+    tasks: list[str] | None = None,
+    families: list[str] | None = None,
+    models: list[str] | None = None,
+    output_tag: str | None = None,
+) -> pd.DataFrame:
     """Evaluate every model artifact on the test split."""
     init_mlflow(cfg, experiment="aki-evaluate")
 
-    artifacts = sorted((paths.artifacts / "models").glob("*.joblib"))
+    artifacts = []
+    for art_path in sorted((paths.artifacts / "models").glob("*.joblib")):
+        task, family, model = artifact_triple_from_path(art_path)
+        if matches_selector(
+            task=task, family=family, model=model,
+            tasks=tasks, families=families, models=models,
+        ):
+            artifacts.append(art_path)
     if not artifacts:
         raise FileNotFoundError("No trained artifacts found. Run `aki train` first.")
 
+    test_cache: dict[str, pd.DataFrame] = {}
     summary_rows: list[dict] = []
     for art_path in artifacts:
         art = ModelArtifact.load(art_path)
-        result = _evaluate_one(cfg, art)
+        result = _evaluate_one(cfg, art, test_cache)
         summary_rows.append(result)
 
     summary = pd.DataFrame(summary_rows)
-    summary_path = paths.tables / "test_summary.csv"
+    summary_path = output_path(paths.tables / "test_summary.csv", output_tag)
     summary.to_csv(summary_path, index=False)
     logger.info(f"test summary -> {summary_path}")
 
     gate = _input_economy_gate(summary, cfg)
     if not gate.empty:
-        gate.to_csv(paths.tables / "input_economy_gate.csv", index=False)
+        gate.to_csv(output_path(paths.tables / "input_economy_gate.csv", output_tag), index=False)
     return summary
 
 
-def _evaluate_one(cfg: Config, art: ModelArtifact) -> dict:
-    features_df = pd.read_parquet(
-        cfg.curated_dir / "features" / f"{art.family}.parquet"
-    )
-    features_df = assign_splits(features_df, cfg)
-    te = load_split(features_df, "test")
+def _evaluate_one(
+    cfg: Config,
+    art: ModelArtifact,
+    test_cache: dict[str, pd.DataFrame],
+) -> dict:
+    te = _test_split_for_family(cfg, art.family, test_cache)
 
     label_col = _label_col_from_task(art.task)
     te = te.dropna(subset=[label_col]).copy()
@@ -82,6 +98,20 @@ def _evaluate_one(cfg: Config, art: ModelArtifact) -> dict:
         _save_auxiliary_tables(cfg, art, tag, y, p, subjects, te)
 
     return {"task": art.task, "family": art.family, "model": art.name, **metrics}
+
+
+def _test_split_for_family(
+    cfg: Config,
+    family: str,
+    cache: dict[str, pd.DataFrame],
+) -> pd.DataFrame:
+    if family not in cache:
+        features_df = pd.read_parquet(
+            cfg.curated_dir / "features" / f"{family}.parquet"
+        )
+        features_df = assign_splits(features_df, cfg)
+        cache[family] = load_split(features_df, "test")
+    return cache[family]
 
 
 def _save_auxiliary_tables(

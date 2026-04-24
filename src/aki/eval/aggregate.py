@@ -20,23 +20,39 @@ from loguru import logger
 
 from aki.utils.config import Config
 from aki.utils.paths import paths
+from aki.utils.subset import artifact_triple_from_path, matches_selector, output_path
 
 _KEY_METRICS = ("auroc", "auprc", "brier", "calibration_slope",
                 "calibration_intercept", "ece",
                 "sensitivity_at_spec_90", "specificity_at_sens_90")
 
 
-def build_final_results(cfg: Config) -> pd.DataFrame:
+def build_final_results(
+    cfg: Config,
+    *,
+    tasks: list[str] | None = None,
+    families: list[str] | None = None,
+    models: list[str] | None = None,
+    output_tag: str | None = None,
+) -> pd.DataFrame:
     """Collect CI-annotated metrics and emit summary tables."""
     rows: list[dict] = []
     for tag_dir in sorted((paths.tables / "per_model").glob("*")):
         if not tag_dir.is_dir():
             continue
+        try:
+            task, family, model = artifact_triple_from_path(tag_dir)
+        except ValueError:
+            continue
+        if not matches_selector(
+            task=task, family=family, model=model,
+            tasks=tasks, families=families, models=models,
+        ):
+            continue
         ci_path = tag_dir / "bootstrap_ci.csv"
         if not ci_path.exists():
             continue
 
-        task, family, model = tag_dir.name.split("__")
         ci = pd.read_csv(ci_path).set_index("metric")
 
         row = {"task": task, "family": family, "model": model}
@@ -53,12 +69,16 @@ def build_final_results(cfg: Config) -> pd.DataFrame:
         return pd.DataFrame()
 
     df = pd.DataFrame(rows).sort_values(["task", "family", "model"], ignore_index=True)
-    csv_path = paths.tables / "final_results.csv"
+    csv_path = output_path(paths.tables / "final_results.csv", output_tag)
     df.to_csv(csv_path, index=False)
 
-    _write_markdown(df, paths.tables / "final_results.md")
-    _write_best_per_task(df, paths.tables / "best_per_task.csv")
-    _write_input_economy_table(df, paths.tables / "input_economy.csv", cfg)
+    _write_markdown(df, output_path(paths.tables / "final_results.md", output_tag))
+    _write_best_per_task(df, output_path(paths.tables / "best_per_task.csv", output_tag))
+    _write_input_economy_table(
+        df,
+        output_path(paths.tables / "input_economy.csv", output_tag),
+        cfg,
+    )
     logger.info(f"final results -> {csv_path}")
     return df
 

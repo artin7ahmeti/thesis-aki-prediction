@@ -20,12 +20,26 @@ from aki.models.base import ModelArtifact
 from aki.split.splits import assign_splits, load_split
 from aki.utils.config import Config
 from aki.utils.paths import paths
+from aki.utils.subset import artifact_triple_from_path, matches_selector
 
 
-def run_explanations(cfg: Config) -> None:
+def run_explanations(
+    cfg: Config,
+    *,
+    tasks: list[str] | None = None,
+    families: list[str] | None = None,
+    models: list[str] | None = None,
+) -> None:
     """Generate explanation artifacts for every trained model."""
     artifacts_dir = paths.artifacts / "models"
-    artifacts = sorted(artifacts_dir.glob("*.joblib"))
+    artifacts = []
+    for art_path in sorted(artifacts_dir.glob("*.joblib")):
+        task, family, model = artifact_triple_from_path(art_path)
+        if matches_selector(
+            task=task, family=family, model=model,
+            tasks=tasks, families=families, models=models,
+        ):
+            artifacts.append(art_path)
     if not artifacts:
         raise FileNotFoundError("No trained artifacts found. Run `aki train` first.")
 

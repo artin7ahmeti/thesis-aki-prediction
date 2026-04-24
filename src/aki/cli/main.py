@@ -174,30 +174,69 @@ def cmd_drift(
 
 
 @app.command("evaluate")
-def cmd_evaluate() -> None:
+def cmd_evaluate(
+    task: list[str] | None = typer.Option(None, help="Repeat to restrict to one or more tasks."),
+    family: list[str] | None = typer.Option(None, help="Repeat to restrict to one or more families."),
+    model: list[str] | None = typer.Option(None, help="Repeat to restrict to one or more model names."),
+    output_tag: str | None = typer.Option(None, help="Suffix for summary outputs when running a subset."),
+) -> None:
     """Score every trained artifact on the held-out test split."""
     from aki.eval.evaluate import evaluate_all
 
     cfg = load_configs()
-    evaluate_all(cfg)
+    evaluate_all(
+        cfg,
+        tasks=task,
+        families=family,
+        models=model,
+        output_tag=output_tag,
+    )
 
 
 @app.command("explain")
-def cmd_explain() -> None:
+def cmd_explain(
+    task: list[str] | None = typer.Option(None, help="Repeat to restrict to one or more tasks."),
+    family: list[str] | None = typer.Option(None, help="Repeat to restrict to one or more families."),
+    model: list[str] | None = typer.Option(None, help="Repeat to restrict to one or more model names."),
+) -> None:
     """Emit global-importance tables, shape plots, and scorecard artifacts."""
     from aki.explain.report import run_explanations
 
     cfg = load_configs()
-    run_explanations(cfg)
+    run_explanations(cfg, tasks=task, families=family, models=model)
 
 
 @app.command("report")
-def cmd_report() -> None:
+def cmd_report(
+    task: list[str] | None = typer.Option(None, help="Repeat to restrict to one or more tasks."),
+    family: list[str] | None = typer.Option(None, help="Repeat to restrict to one or more families."),
+    model: list[str] | None = typer.Option(None, help="Repeat to restrict to one or more model names."),
+    output_tag: str | None = typer.Option(None, help="Suffix for report outputs when running a subset."),
+) -> None:
     """Aggregate per-model tables into final thesis-ready results."""
     from aki.eval.aggregate import build_final_results
 
     cfg = load_configs()
-    build_final_results(cfg)
+    build_final_results(
+        cfg,
+        tasks=task,
+        families=family,
+        models=model,
+        output_tag=output_tag,
+    )
+
+
+@app.command("refresh")
+def cmd_refresh(
+    task: list[str] | None = typer.Option(None, help="Repeat to restrict to one or more tasks."),
+    family: list[str] | None = typer.Option(None, help="Repeat to restrict to one or more families."),
+    model: list[str] | None = typer.Option(None, help="Repeat to restrict to one or more model names."),
+    output_tag: str | None = typer.Option(None, help="Suffix for evaluate/report summary outputs."),
+) -> None:
+    """Run evaluate -> explain -> report, optionally on a filtered subset."""
+    cmd_evaluate(task=task, family=family, model=model, output_tag=output_tag)
+    cmd_explain(task=task, family=family, model=model)
+    cmd_report(task=task, family=family, model=model, output_tag=output_tag)
 
 
 # All-in-one
