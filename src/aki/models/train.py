@@ -67,6 +67,7 @@ def train_all(
 
     rows: list[dict] = []
     for family in families:
+        family_cfg = cfg.features["feature_families"].get(family, {})
         features_df = _load_features(cfg, family)
         features_df = assign_splits(features_df, cfg)
 
@@ -83,6 +84,9 @@ def train_all(
                     "sparse_logistic" if model_name == "scorecard" else model_name,
                     {},
                 )
+                family_overrides = (
+                    family_cfg.get("model_overrides", {}).get(model_name, {})
+                )
                 metrics = _train_one(
                     cfg=cfg,
                     features_df=features_df,
@@ -90,7 +94,7 @@ def train_all(
                     label_col=label_col,
                     family=family,
                     model_name=model_name,
-                    model_params=dict(default_params),
+                    model_params={**dict(default_params), **dict(family_overrides)},
                     tune=tune,
                     n_trials=n_trials,
                 )
@@ -133,6 +137,7 @@ def _train_one(
         groups = tr.loc[X_tr.index, "subject_id"].values
         best = tune_model(
             model_name, X_tr, y_tr, groups=groups, cfg=cfg,
+            base_params=model_params,
             n_trials=n_trials, seed=cfg.random_seed,
         )
         # Drop private diagnostic keys before merging

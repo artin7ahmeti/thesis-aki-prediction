@@ -49,6 +49,29 @@ def test_scorecard_selects_sparse_set():
     assert p.shape == (len(y),)
 
 
+def test_binned_scorecard_fits_and_predicts():
+    X, y = _toy_binary(n=600, d=5)
+    X["binary"] = (X["f0"] > 0).astype(int)
+    m = ScorecardModel({
+        "representation": "binned",
+        "selection_mode": "fixed",
+        "C": 0.3,
+        "bin_edges": {
+            "f0": [-0.5, 0.5],
+            "f1": [-0.5, 0.5],
+            "f2": [-0.5, 0.5],
+            "f3": [-0.5, 0.5],
+            "f4": [-0.5, 0.5],
+        },
+        "random_state": 0,
+    }).fit(X[["f0", "f1", "f2", "f3", "f4", "binary"]], y, groups=np.arange(len(X)) // 3)
+    assert m.estimator_ is not None
+    assert m.extra_["scorecard_representation"] == "binned"
+    assert len(m.feature_names_) == 6
+    p = m.predict_proba(X[["f0", "f1", "f2", "f3", "f4", "binary"]])
+    assert p.shape == (len(y),)
+
+
 def test_ebm_produces_global_importance():
     pytest.importorskip("interpret")
     X, y = _toy_binary(n=300, d=5)

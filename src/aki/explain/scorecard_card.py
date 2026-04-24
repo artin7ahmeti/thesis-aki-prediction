@@ -1,14 +1,13 @@
 """Printable scorecard artifact.
 
-Converts a fitted sparse-logistic ``ModelArtifact`` into:
-- ``scorecard.csv``: feature-level summary in raw and standardized units,
-- ``scorecard_points.csv``: simple raw-value anchor rules with points,
-- ``scorecard.md``: thesis-friendly markdown with both tables.
+For the original linear sparse-logistic scorecard, this module exports:
+- ``scorecard.csv``: feature-level summary in raw and standardized units
+- ``scorecard_points.csv``: simple anchor-point rules from training quantiles
 
-The points table is intentionally approximate: it is derived from the
-fitted linear predictor and training quantiles stored on the artifact.
-That makes it useful for interpretation and draft score-sheet design
-without pretending these are clinician-validated bedside cutoffs yet.
+For the newer bedside-binned scorecard, it exports:
+- ``scorecard.csv``: one row per raw feature summarizing the score sheet
+- ``scorecard_points.csv``: explicit bedside bins / levels with odds ratios
+  and points relative to the reference level
 """
 
 from __future__ import annotations
@@ -32,21 +31,28 @@ def build_scorecard_artifact(
 
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    summary = _feature_summary_table(art)
+    if art.extra.get("scorecard_representation") == "binned":
+        points = _binned_points_table(art)
+        summary = _binned_feature_summary_table(art, points)
+        markdown = _binned_markdown_report(art, summary, points)
+    else:
+        summary = _linear_feature_summary_table(art)
+        points = _linear_points_table(art, summary)
+        markdown = _linear_markdown_report(art, summary, points)
+
     summary_path = out_dir / "scorecard.csv"
     summary.to_csv(summary_path, index=False)
 
-    points = _points_table(art, summary)
     points_path = out_dir / "scorecard_points.csv"
     points.to_csv(points_path, index=False)
 
     md_path = out_dir / "scorecard.md"
-    md_path.write_text(_markdown_report(art, summary, points), encoding="utf-8")
+    md_path.write_text(markdown, encoding="utf-8")
 
     return {"csv": summary_path, "points_csv": points_path, "md": md_path}
 
 
-def _feature_summary_table(art: ModelArtifact) -> pd.DataFrame:
+def _linear_feature_summary_table(art: ModelArtifact) -> pd.DataFrame:
     clf = art.estimator.named_steps["clf"]
     coef = clf.coef_.ravel()
     profiles = art.extra.get("feature_profiles", {})
@@ -92,7 +98,7 @@ def _feature_summary_table(art: ModelArtifact) -> pd.DataFrame:
     )
 
 
-def _points_table(art: ModelArtifact, summary: pd.DataFrame) -> pd.DataFrame:
+def _linear_points_table(art: ModelArtifact, summary: pd.DataFrame) -> pd.DataFrame:
     profiles = art.extra.get("feature_profiles", {})
     rows: list[dict[str, Any]] = []
 
@@ -105,7 +111,7 @@ def _points_table(art: ModelArtifact, summary: pd.DataFrame) -> pd.DataFrame:
         coef = float(row.coefficient_per_sd)
         baseline_z = (baseline - mean) / scale
 
-        anchors = _anchor_values(profile)
+        anchors = _linear_anchor_values(profile)
         for label, value in anchors:
             value = float(value)
             z_value = (value - mean) / scale
@@ -139,7 +145,127 @@ def _points_table(art: ModelArtifact, summary: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def _anchor_values(profile: dict[str, Any]) -> list[tuple[str, float]]:
+def _binned_points_table(art: ModelArtifact) -> pd.DataFrame:
+    clf = art.estimator.named_steps["clf"]
+    coef_map = {
+        meta.get("term_name", term): float(coef)
+        for meta, term, coef in zip(
+            art.extra.get("term_metadata", []),
+            art.extra.get("scorecard_terms", []),
+            clf.coef_.ravel(),
+            strict=True,
+        )
+    }
+
+    rows: list[dict[str, Any]] = []
+    profiles = art.extra.get("feature_profiles", {})
+    for feature in art.feature_names:
+        profile = profiles.get(feature, {})
+        kind = profile.get("kind")
+        if kind == "binned_continuous":
+            for level in profile.get("bins", []):
+                coef = 0.0 if level.get("reference") else coef_map.get(level.get("term_name"), 0.0)
+                rows.append(
+                    {
+                        "feature": feature,
+                        "kind": kind,
+                        "level_label": level.get("label"),
+                        "range_display": level.get("range_display"),
+                        "lower_bound": level.get("lower"),
+                        "upper_bound": level.get("upper"),
+                        "reference": bool(level.get("reference")),
+                        "coefficient_logodds_vs_reference": float(coef),
+                        "odds_ratio_vs_reference": float(np.exp(coef)),
+                    }
+                )
+            continue
+
+        if kind == "binary":
+            rows.extend(
+                [
+                    {
+                        "feature": feature,
+                        "kind": kind,
+                        "level_label": "0 / absent",
+                        "range_display": "0 / absent",
+                        "lower_bound": float("nan"),
+                        "upper_bound": float("nan"),
+                        "reference": True,
+                        "coefficient_logodds_vs_reference": 0.0,
+                        "odds_ratio_vs_reference": 1.0,
+                    },
+                    {
+                        "feature": feature,
+                        "kind": kind,
+                        "level_label": "1 / present",
+                        "range_display": "1 / present",
+                        "lower_bound": float("nan"),
+                        "upper_bound": float("nan"),
+                        "reference": False,
+                        "coefficient_logodds_vs_reference": float(coef_map.get(feature, 0.0)),
+                        "odds_ratio_vs_reference": float(np.exp(coef_map.get(feature, 0.0))),
+                    },
+                ]
+            )
+
+    table = pd.DataFrame(rows)
+    if table.empty:
+        return table
+
+    nonzero = table.loc[
+        ~table["reference"] & (table["coefficient_logodds_vs_reference"] != 0),
+        "coefficient_logodds_vs_reference",
+    ].abs()
+    point_scale = 1.0 if nonzero.empty else 1.0 / float(nonzero.min())
+    table["points_vs_reference"] = np.round(
+        table["coefficient_logodds_vs_reference"] * point_scale
+    ).astype(int)
+    table.loc[table["reference"], "points_vs_reference"] = 0
+
+    order = (
+        table.groupby("feature")["points_vs_reference"]
+        .apply(lambda s: float(s.abs().max()))
+        .sort_values(ascending=False)
+        .index
+        .tolist()
+    )
+    feature_order = {feature: idx for idx, feature in enumerate(order)}
+    return table.sort_values(
+        ["feature", "reference", "points_vs_reference"],
+        key=lambda s: s.map(feature_order) if s.name == "feature" else s,
+        ascending=[True, False, False],
+        ignore_index=True,
+    )
+
+
+def _binned_feature_summary_table(art: ModelArtifact, points: pd.DataFrame) -> pd.DataFrame:
+    profiles = art.extra.get("feature_profiles", {})
+    rows: list[dict[str, Any]] = []
+    for feature in art.feature_names:
+        subset = points[points["feature"] == feature]
+        profile = profiles.get(feature, {})
+        reference_level = ""
+        if profile.get("kind") == "binned_continuous":
+            reference_level = str(profile.get("reference_bin_label", "reference"))
+        elif profile.get("kind") == "binary":
+            reference_level = "0 / absent"
+        rows.append(
+            {
+                "feature": feature,
+                "kind": profile.get("kind", "unknown"),
+                "n_levels": int(len(subset)),
+                "reference_level": reference_level,
+                "max_abs_logodds": float(subset["coefficient_logodds_vs_reference"].abs().max()),
+                "max_abs_points": int(subset["points_vs_reference"].abs().max()),
+                "selected_C": float(art.extra.get("selected_C", np.nan)),
+            }
+        )
+    return pd.DataFrame(rows).sort_values(
+        "max_abs_points", ascending=False, ignore_index=True
+    )
+
+
+def _linear_anchor_values(profile: dict[str, Any]) -> list[tuple[str, float]]:
     kind = profile.get("kind", "continuous")
     if kind == "binary":
         unique_values = [float(v) for v in profile.get("unique_values", [])]
@@ -171,7 +297,7 @@ def _anchor_values(profile: dict[str, Any]) -> list[tuple[str, float]]:
     return deduped
 
 
-def _markdown_report(
+def _linear_markdown_report(
     art: ModelArtifact,
     summary: pd.DataFrame,
     points: pd.DataFrame,
@@ -215,6 +341,56 @@ def _markdown_report(
         "",
         "These anchor points are data-driven summaries from the training set, not",
         "prescriptive bedside cutoffs or causal treatment thresholds.",
+    ]
+    return "\n".join(lines)
+
+
+def _binned_markdown_report(
+    art: ModelArtifact,
+    summary: pd.DataFrame,
+    points: pd.DataFrame,
+) -> str:
+    intercept = float(art.estimator.named_steps["clf"].intercept_.ravel()[0])
+    base_rate = art.extra.get("base_rate")
+    selected_c = art.extra.get("selected_C")
+    lines = [
+        f"# Scorecard - {art.task} ({art.family})",
+        "",
+        f"- Intercept: **{intercept:+.3f}** log-odds",
+        f"- Regularization C: **{selected_c:.4g}**" if selected_c is not None else "- Regularization C: n/a",
+        "- Scorecard form: **clinically binned logistic scorecard**",
+        f"- Training prevalence: **{float(base_rate):.3f}**" if base_rate is not None else "- Training prevalence: n/a",
+        f"- Raw features: **{len(summary)}**",
+        f"- Additive terms: **{int(art.extra.get('n_terms', 0))}**",
+        "",
+        "## Feature Summary",
+        "",
+        "| Feature | Levels | Reference | Max |",
+        "|---|---:|---|---:|",
+    ]
+    for row in summary.itertuples(index=False):
+        lines.append(
+            f"| `{row.feature}` | {int(row.n_levels)} | {row.reference_level} | {row.max_abs_points:+d} |"
+        )
+
+    lines += [
+        "",
+        "## Bedside Points",
+        "",
+        "| Feature | Level | OR vs Ref | Points |",
+        "|---|---|---:|---:|",
+    ]
+    for row in points.itertuples(index=False):
+        label = f"{row.range_display} (ref)" if row.reference else row.range_display
+        lines.append(
+            f"| `{row.feature}` | {label} | {row.odds_ratio_vs_reference:.2f} | {int(row.points_vs_reference):+d} |"
+        )
+
+    lines += [
+        "",
+        "These bins are the configured bedside scorecard levels used during training.",
+        "They are clinically oriented working cutoffs for thesis evaluation, not",
+        "causal treatment thresholds or externally validated practice rules.",
     ]
     return "\n".join(lines)
 

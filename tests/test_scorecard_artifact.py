@@ -55,3 +55,34 @@ def test_scorecard_honors_scalar_tuned_c_over_default_grid():
 
     assert abs(model.extra_["selected_C"] - 0.03) < 1e-12
     assert model.extra_["C_grid"] == [0.03]
+
+
+def test_binned_scorecard_artifact_contains_bedside_points(tmp_path):
+    X, y = _toy_binary(n=500, d=5, seed=11)
+    X["binary"] = (X["f0"] > 0).astype(int)
+    model = ScorecardModel(
+        {
+            "representation": "binned",
+            "selection_mode": "fixed",
+            "C": 0.3,
+            "bin_edges": {
+                "f0": [-0.5, 0.5],
+                "f1": [-0.5, 0.5],
+                "f2": [-0.5, 0.5],
+                "f3": [-0.5, 0.5],
+                "f4": [-0.5, 0.5],
+            },
+            "random_state": 0,
+        }
+    ).fit(X[["f0", "f1", "f2", "f3", "f4", "binary"]], y, groups=np.arange(len(X)) // 5)
+
+    art = model.artifact(task="aki_stage1_24h", family="scorecard_primary")
+    outputs = build_scorecard_artifact(art, tmp_path)
+
+    summary = pd.read_csv(outputs["csv"])
+    points = pd.read_csv(outputs["points_csv"])
+    md = outputs["md"].read_text(encoding="utf-8")
+
+    assert {"feature", "reference_level", "max_abs_points"} <= set(summary.columns)
+    assert {"feature", "range_display", "points_vs_reference"} <= set(points.columns)
+    assert "## Bedside Points" in md

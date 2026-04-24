@@ -39,6 +39,7 @@ def tune_model(
     y: pd.Series,
     groups: np.ndarray,
     cfg: Config,
+    base_params: dict[str, Any] | None = None,
     n_trials: int = 60,
     n_folds: int = 5,
     seed: int = 42,
@@ -67,7 +68,7 @@ def tune_model(
     study = optuna.create_study(direction="maximize", sampler=sampler, pruner=pruner)
 
     def objective(trial: optuna.Trial) -> float:
-        params = suggester(trial, cfg)
+        params = suggester(trial, cfg, base_params)
         auroc_folds: list[float] = []
         auprc_folds: list[float] = []
         logger.info(
@@ -144,8 +145,12 @@ def load_best_params(tag: str) -> dict[str, Any] | None:
 # ------------------------------------------------------------------ #
 # Per-model suggestion spaces
 # ------------------------------------------------------------------ #
-def _suggest_ebm(trial: optuna.Trial, cfg: Config) -> dict[str, Any]:
-    base = dict(cfg.models.get("ebm", {}))
+def _suggest_ebm(
+    trial: optuna.Trial,
+    cfg: Config,
+    base_params: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    base = dict(base_params or cfg.models.get("ebm", {}))
     base.update(
         {
             "learning_rate": trial.suggest_float("learning_rate", 1e-3, 5e-2, log=True),
@@ -158,20 +163,25 @@ def _suggest_ebm(trial: optuna.Trial, cfg: Config) -> dict[str, Any]:
     return base
 
 
-def _suggest_scorecard(trial: optuna.Trial, cfg: Config) -> dict[str, Any]:
-    base = dict(cfg.models.get("sparse_logistic", {}))
+def _suggest_scorecard(
+    trial: optuna.Trial,
+    cfg: Config,
+    base_params: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    base = dict(base_params or cfg.models.get("sparse_logistic", {}))
     tuned_C = trial.suggest_float("C", 1e-3, 1e1, log=True)
-    base.update(
-        {
-            "C": tuned_C,
-            "target_features": trial.suggest_int("target_features", 5, 10),
-        }
-    )
+    base["C"] = tuned_C
+    if base.get("selection_mode", "sparse_path") != "fixed":
+        base["target_features"] = trial.suggest_int("target_features", 5, 10)
     return base
 
 
-def _suggest_lightgbm(trial: optuna.Trial, cfg: Config) -> dict[str, Any]:
-    base = dict(cfg.models.get("lightgbm", {}))
+def _suggest_lightgbm(
+    trial: optuna.Trial,
+    cfg: Config,
+    base_params: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    base = dict(base_params or cfg.models.get("lightgbm", {}))
     base.update(
         {
             "num_leaves": trial.suggest_int("num_leaves", 15, 255, log=True),
@@ -231,7 +241,10 @@ def _fit_eval_lightgbm(
     return m.predict_proba(X_va)
 
 
-_SUGGESTERS: dict[str, Callable[[optuna.Trial, Config], dict[str, Any]]] = {
+_SUGGESTERS: dict[
+    str,
+    Callable[[optuna.Trial, Config, dict[str, Any] | None], dict[str, Any]],
+] = {
     "ebm": _suggest_ebm,
     "scorecard": _suggest_scorecard,
     "lightgbm": _suggest_lightgbm,

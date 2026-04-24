@@ -182,12 +182,23 @@ feature_families:
       - age
       - urine_output_ml_6h
       - creatinine_max_24h
-      - loop_diuretic_24h
       - map_mean_12h
       - fluid_input_ml_12h
       - glucose_std_24h
       - hematocrit_max_24h
     description: "Curated primary sparse-logistic family for stage1 24h/48h scorecard development"
+    model_overrides:
+      scorecard:
+        representation: binned
+        selection_mode: fixed
+        bin_edges:
+          age: [50, 65, 75]
+          urine_output_ml_6h: [200, 400, 800]
+          creatinine_max_24h: [0.8, 1.1, 1.5]
+          map_mean_12h: [65, 75, 90]
+          fluid_input_ml_12h: [500, 1500, 3000]
+          glucose_std_24h: [10, 25, 50]
+          hematocrit_max_24h: [28, 33, 38]
   scorecard_core:
     include: []
     include_encoded_demographics: false
@@ -198,6 +209,16 @@ feature_families:
       - map_mean_12h
       - hematocrit_max_24h
     description: "Core bedside scorecard without treatment proxies or encoded demographics"
+    model_overrides:
+      scorecard:
+        representation: binned
+        selection_mode: fixed
+        bin_edges:
+          age: [50, 65, 75]
+          urine_output_ml_6h: [200, 400, 800]
+          creatinine_max_24h: [0.8, 1.1, 1.5]
+          map_mean_12h: [65, 75, 90]
+          hematocrit_max_24h: [28, 33, 38]
   scorecard_augmented:
     include: []
     include_encoded_demographics: false
@@ -211,3 +232,15 @@ feature_families:
       - fluid_input_ml_12h
       - glucose_std_24h
     description: "Augmented bedside scorecard with treatment/exposure context"
+    model_overrides:
+      scorecard:
+        representation: binned
+        selection_mode: fixed
+        bin_edges:
+          age: [50, 65, 75]
+          urine_output_ml_6h: [200, 400, 800]
+          creatinine_max_24h: [0.8, 1.1, 1.5]
+          map_mean_12h: [65, 75, 90]
+          hematocrit_max_24h: [28, 33, 38]
+          fluid_input_ml_12h: [500, 1500, 3000]
+          glucose_std_24h: [10, 25, 50]

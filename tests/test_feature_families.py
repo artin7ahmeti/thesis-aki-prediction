@@ -14,17 +14,19 @@ def test_scorecard_primary_family_is_configured():
         "age",
         "urine_output_ml_6h",
         "creatinine_max_24h",
-        "loop_diuretic_24h",
         "map_mean_12h",
         "fluid_input_ml_12h",
         "glucose_std_24h",
         "hematocrit_max_24h",
     ]
+    assert family["model_overrides"]["scorecard"]["representation"] == "binned"
+    assert family["model_overrides"]["scorecard"]["selection_mode"] == "fixed"
 
 
 def test_scorecard_core_and_augmented_families_are_configured():
     cfg = load_configs()
     core = cfg.features["feature_families"]["scorecard_core"]
+    primary = cfg.features["feature_families"]["scorecard_primary"]
     augmented = cfg.features["feature_families"]["scorecard_augmented"]
 
     assert core["include_encoded_demographics"] is False
@@ -47,6 +49,9 @@ def test_scorecard_core_and_augmented_families_are_configured():
         "fluid_input_ml_12h",
         "glucose_std_24h",
     ]
+    assert primary["selected_features"] != augmented["selected_features"]
+    assert core["model_overrides"]["scorecard"]["representation"] == "binned"
+    assert augmented["model_overrides"]["scorecard"]["representation"] == "binned"
 
 
 def test_select_family_supports_curated_selected_features_without_encoded_demographics():
@@ -73,7 +78,6 @@ def test_select_family_supports_curated_selected_features_without_encoded_demogr
             "y_cr_only_stage1_48h": [0],
             "urine_output_ml_6h": [800.0],
             "creatinine_max_24h": [1.8],
-            "loop_diuretic_24h": [1],
             "map_mean_12h": [72.0],
             "fluid_input_ml_12h": [1200.0],
             "glucose_std_24h": [18.0],
