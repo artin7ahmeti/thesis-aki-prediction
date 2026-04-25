@@ -176,11 +176,17 @@ def _binned_points_table(art: ModelArtifact) -> pd.DataFrame:
                         "reference": bool(level.get("reference")),
                         "coefficient_logodds_vs_reference": float(coef),
                         "odds_ratio_vs_reference": float(np.exp(coef)),
+                        "train_n": int(level.get("train_n", 0)),
+                        "train_events": int(level.get("train_events", 0)),
+                        "train_event_rate": float(level.get("train_event_rate", np.nan)),
                     }
                 )
             continue
 
         if kind == "binary":
+            levels = profile.get("levels", [])
+            absent = next((level for level in levels if level.get("reference")), {})
+            present = next((level for level in levels if not level.get("reference")), {})
             rows.extend(
                 [
                     {
@@ -193,6 +199,9 @@ def _binned_points_table(art: ModelArtifact) -> pd.DataFrame:
                         "reference": True,
                         "coefficient_logodds_vs_reference": 0.0,
                         "odds_ratio_vs_reference": 1.0,
+                        "train_n": int(absent.get("train_n", 0)),
+                        "train_events": int(absent.get("train_events", 0)),
+                        "train_event_rate": float(absent.get("train_event_rate", np.nan)),
                     },
                     {
                         "feature": feature,
@@ -204,6 +213,9 @@ def _binned_points_table(art: ModelArtifact) -> pd.DataFrame:
                         "reference": False,
                         "coefficient_logodds_vs_reference": float(coef_map.get(feature, 0.0)),
                         "odds_ratio_vs_reference": float(np.exp(coef_map.get(feature, 0.0))),
+                        "train_n": int(present.get("train_n", 0)),
+                        "train_events": int(present.get("train_events", 0)),
+                        "train_event_rate": float(present.get("train_event_rate", np.nan)),
                     },
                 ]
             )
@@ -257,6 +269,9 @@ def _binned_feature_summary_table(art: ModelArtifact, points: pd.DataFrame) -> p
                 "reference_level": reference_level,
                 "max_abs_logodds": float(subset["coefficient_logodds_vs_reference"].abs().max()),
                 "max_abs_points": int(subset["points_vs_reference"].abs().max()),
+                "min_train_n": int(subset["train_n"].min()),
+                "max_train_n": int(subset["train_n"].max()),
+                "max_train_event_rate": float(subset["train_event_rate"].max()),
                 "selected_C": float(art.extra.get("selected_C", np.nan)),
             }
         )
@@ -365,25 +380,27 @@ def _binned_markdown_report(
         "",
         "## Feature Summary",
         "",
-        "| Feature | Levels | Reference | Max |",
-        "|---|---:|---|---:|",
+        "| Feature | Levels | Reference | Max | Min n | Max event rate |",
+        "|---|---:|---|---:|---:|---:|",
     ]
     for row in summary.itertuples(index=False):
         lines.append(
-            f"| `{row.feature}` | {int(row.n_levels)} | {row.reference_level} | {row.max_abs_points:+d} |"
+            f"| `{row.feature}` | {int(row.n_levels)} | {row.reference_level} | {row.max_abs_points:+d} "
+            f"| {int(row.min_train_n)} | {_pct(row.max_train_event_rate)} |"
         )
 
     lines += [
         "",
         "## Bedside Points",
         "",
-        "| Feature | Level | OR vs Ref | Points |",
-        "|---|---|---:|---:|",
+        "| Feature | Level | Train n | Event rate | OR vs Ref | Points |",
+        "|---|---|---:|---:|---:|---:|",
     ]
     for row in points.itertuples(index=False):
         label = f"{row.range_display} (ref)" if row.reference else row.range_display
         lines.append(
-            f"| `{row.feature}` | {label} | {row.odds_ratio_vs_reference:.2f} | {int(row.points_vs_reference):+d} |"
+            f"| `{row.feature}` | {label} | {int(row.train_n)} | {_pct(row.train_event_rate)} "
+            f"| {row.odds_ratio_vs_reference:.2f} | {int(row.points_vs_reference):+d} |"
         )
 
     lines += [
@@ -399,3 +416,9 @@ def _fmt(value: float) -> str:
     if not np.isfinite(float(value)):
         return "n/a"
     return f"{float(value):.2f}"
+
+
+def _pct(value: float) -> str:
+    if not np.isfinite(float(value)):
+        return "n/a"
+    return f"{100.0 * float(value):.1f}%"

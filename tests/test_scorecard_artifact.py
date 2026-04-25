@@ -83,6 +83,7 @@ def test_binned_scorecard_artifact_contains_bedside_points(tmp_path):
     points = pd.read_csv(outputs["points_csv"])
     md = outputs["md"].read_text(encoding="utf-8")
 
-    assert {"feature", "reference_level", "max_abs_points"} <= set(summary.columns)
-    assert {"feature", "range_display", "points_vs_reference"} <= set(points.columns)
+    assert {"feature", "reference_level", "max_abs_points", "min_train_n"} <= set(summary.columns)
+    assert {"feature", "range_display", "points_vs_reference", "train_n", "train_event_rate"} <= set(points.columns)
     assert "## Bedside Points" in md
+    assert "Train n" in md

@@ -44,6 +44,7 @@ class ScorecardDesignTransformer(BaseEstimator, TransformerMixin):
         y: pd.Series | None = None,
     ) -> ScorecardDesignTransformer:
         X_df = self._coerce_frame(X)
+        y_series = None if y is None else pd.Series(y).reset_index(drop=True).astype(float)
         self.input_features_ = list(X_df.columns)
         self.bin_edges_ = {
             feature: [float(v) for v in values]
@@ -60,6 +61,8 @@ class ScorecardDesignTransformer(BaseEstimator, TransformerMixin):
             observed = series.dropna().astype(float)
             median = float(observed.median()) if not observed.empty else 0.0
             self.medians_[feature] = median
+            filled = series.fillna(median).astype(float).to_numpy()
+            missing_count = int(series.isna().sum())
 
             quantiles = {
                 f"{q:.2f}": (
@@ -90,6 +93,14 @@ class ScorecardDesignTransformer(BaseEstimator, TransformerMixin):
                     reference = idx == reference_idx
                     term_name = f"{feature}__bin_{idx}" if not reference else None
                     range_display = _format_range(lower, upper)
+                    mask = np.digitize(filled, edges, right=False) == idx
+                    train_n = int(mask.sum())
+                    train_events = (
+                        int(y_series.loc[mask].sum()) if y_series is not None and train_n else 0
+                    )
+                    train_event_rate = (
+                        float(y_series.loc[mask].mean()) if y_series is not None and train_n else float("nan")
+                    )
                     bin_meta = {
                         "index": idx,
                         "label": label,
@@ -98,6 +109,9 @@ class ScorecardDesignTransformer(BaseEstimator, TransformerMixin):
                         "range_display": range_display,
                         "reference": reference,
                         "term_name": term_name,
+                        "train_n": train_n,
+                        "train_events": train_events,
+                        "train_event_rate": train_event_rate,
                     }
                     bins.append(bin_meta)
                     if not reference:
@@ -125,6 +139,7 @@ class ScorecardDesignTransformer(BaseEstimator, TransformerMixin):
                     "bins": bins,
                     "reference_bin_index": reference_idx,
                     "reference_bin_label": labels[reference_idx],
+                    "missing_count": missing_count,
                 }
                 continue
 
@@ -152,9 +167,40 @@ class ScorecardDesignTransformer(BaseEstimator, TransformerMixin):
                 "impute_median": median,
                 "quantiles": quantiles,
                 "unique_values": unique_values[:5],
+                "missing_count": missing_count,
                 "levels": [
-                    {"label": "0 / absent", "reference": True, "value": 0.0},
-                    {"label": "1 / present", "reference": False, "value": 1.0},
+                    {
+                        "label": "0 / absent",
+                        "reference": True,
+                        "value": 0.0,
+                        "train_n": int((filled == 0.0).sum()),
+                        "train_events": (
+                            int(y_series.loc[filled == 0.0].sum())
+                            if y_series is not None and int((filled == 0.0).sum())
+                            else 0
+                        ),
+                        "train_event_rate": (
+                            float(y_series.loc[filled == 0.0].mean())
+                            if y_series is not None and int((filled == 0.0).sum())
+                            else float("nan")
+                        ),
+                    },
+                    {
+                        "label": "1 / present",
+                        "reference": False,
+                        "value": 1.0,
+                        "train_n": int((filled == 1.0).sum()),
+                        "train_events": (
+                            int(y_series.loc[filled == 1.0].sum())
+                            if y_series is not None and int((filled == 1.0).sum())
+                            else 0
+                        ),
+                        "train_event_rate": (
+                            float(y_series.loc[filled == 1.0].mean())
+                            if y_series is not None and int((filled == 1.0).sum())
+                            else float("nan")
+                        ),
+                    },
                 ],
                 "reference_level": "0 / absent",
             }
