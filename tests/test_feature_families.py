@@ -54,6 +54,33 @@ def test_scorecard_core_and_augmented_families_are_configured():
     assert augmented["model_overrides"]["scorecard"]["representation"] == "binned"
 
 
+def test_revised_scorecard_v2_families_are_configured():
+    cfg = load_configs()
+    primary_v2 = cfg.features["feature_families"]["scorecard_primary_v2"]
+    augmented_v2 = cfg.features["feature_families"]["scorecard_augmented_v2"]
+
+    assert primary_v2["include_encoded_demographics"] is False
+    assert primary_v2["selected_features"] == [
+        "age",
+        "creatinine_max_24h",
+        "map_mean_12h",
+    ]
+    assert primary_v2["model_overrides"]["scorecard"]["representation"] == "binned"
+    assert primary_v2["model_overrides"]["scorecard"]["selection_mode"] == "fixed"
+
+    assert augmented_v2["include_encoded_demographics"] is False
+    assert augmented_v2["selected_features"] == [
+        "age",
+        "creatinine_max_24h",
+        "map_mean_12h",
+        "loop_diuretic_24h",
+        "fluid_input_ml_12h",
+        "glucose_std_24h",
+    ]
+    assert augmented_v2["model_overrides"]["scorecard"]["representation"] == "binned"
+    assert augmented_v2["model_overrides"]["scorecard"]["selection_mode"] == "fixed"
+
+
 def test_select_family_supports_curated_selected_features_without_encoded_demographics():
     cfg = load_configs()
     family_cfg = cfg.features["feature_families"]["scorecard_primary"]

@@ -244,3 +244,40 @@ feature_families:
           hematocrit_max_24h: [28, 33, 38]
           fluid_input_ml_12h: [500, 1500, 3000]
           glucose_std_24h: [10, 25, 50]
+  scorecard_primary_v2:
+    include: []
+    include_encoded_demographics: false
+    selected_features:
+      - age
+      - creatinine_max_24h
+      - map_mean_12h
+    description: "Revised physiologic bedside scorecard with only the most stable and clinically coherent predictors"
+    model_overrides:
+      scorecard:
+        representation: binned
+        selection_mode: fixed
+        bin_edges:
+          age: [50, 65, 75]
+          creatinine_max_24h: [0.8, 1.1, 1.5]
+          map_mean_12h: [65, 75, 90]
+  scorecard_augmented_v2:
+    include: []
+    include_encoded_demographics: false
+    selected_features:
+      - age
+      - creatinine_max_24h
+      - map_mean_12h
+      - loop_diuretic_24h
+      - fluid_input_ml_12h
+      - glucose_std_24h
+    description: "Revised operational bedside scorecard without raw urine volume or hematocrit"
+    model_overrides:
+      scorecard:
+        representation: binned
+        selection_mode: fixed
+        bin_edges:
+          age: [50, 65, 75]
+          creatinine_max_24h: [0.8, 1.1, 1.5]
+          map_mean_12h: [65, 75, 90]
+          fluid_input_ml_12h: [500, 1500, 3000]
+          glucose_std_24h: [10, 25, 50]
