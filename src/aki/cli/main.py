@@ -26,7 +26,7 @@ app = typer.Typer(
 )
 
 
-def _duckdb_session(cfg: Config) -> DuckDBSession:
+def _duckdb_session(cfg: Config, read_only: bool = False) -> DuckDBSession:
     """Create a DuckDB session using YAML/env-resolved Komondor paths."""
     db_cfg = cfg.data.get("duckdb", {})
     temp_raw = db_cfg.get("temp_directory")
@@ -39,6 +39,7 @@ def _duckdb_session(cfg: Config) -> DuckDBSession:
         memory_limit=db_cfg.get("memory_limit", "16GB"),
         threads=int(db_cfg.get("threads", 8)),
         temp_directory=temp_dir,
+        read_only=read_only,
     )
 
 
@@ -113,6 +114,39 @@ def cmd_qa() -> None:
     cfg = load_configs()
     with _duckdb_session(cfg) as conn:
         run_qa_checks(conn, cfg)
+
+
+@app.command("inspect-db")
+def cmd_inspect_db(
+    table: str = typer.Option("cohort.landmarks", help="Schema-qualified table to preview."),
+    limit: int = typer.Option(20, help="Number of rows to preview."),
+    summary_only: bool = typer.Option(False, "--summary-only", help="Only print core table counts."),
+) -> None:
+    """Inspect the configured DuckDB database in read-only mode."""
+    from aki.data.inspect import core_table_counts, path_status, preview_table
+
+    cfg = load_configs()
+    typer.echo(f"DuckDB: {cfg.duckdb_path} [{path_status(cfg.duckdb_path)}]")
+    typer.echo(f"Curated: {cfg.curated_dir}")
+
+    if not cfg.duckdb_path.exists():
+        raise typer.Exit(code=1)
+
+    with _duckdb_session(cfg, read_only=True) as conn:
+        typer.echo("\nCore table counts:")
+        for name, count in core_table_counts(conn):
+            count_text = "missing" if count is None else f"{count:,}"
+            typer.echo(f"  {name:<30} {count_text}")
+
+        if summary_only:
+            return
+
+        typer.echo(f"\nPreview: {table} (limit {limit})")
+        df = preview_table(conn, table=table, limit=limit)
+        if df.empty:
+            typer.echo("  [empty result]")
+            return
+        typer.echo(df.to_string(index=False))
 
 
 # Modeling stages

@@ -3,7 +3,7 @@
 # Requires: `pip install -e ".[all]"` then `pre-commit install`.
 
 .PHONY: help install install-dev lint format typecheck test test-all \
-        stage cohort labels features qa train tune minimal drift \
+        stage cohort labels features qa inspect-db train tune minimal drift \
         evaluate explain report pipeline \
         clean-cache clean-reports clean-all
 
@@ -25,6 +25,7 @@ help:
 	@echo "  labels         Compute KDIGO AKI labels at landmarks"
 	@echo "  features       Build rolling-window feature matrix"
 	@echo "  qa             Run QA checks on curated data"
+	@echo "  inspect-db     Read-only DB summary + table preview"
 	@echo "  tune           Optuna HPO for every (task x family x model)"
 	@echo "  train          Train EBM / sparse LR / LightGBM (reads tuned params if cached)"
 	@echo "  minimal        Derive minimal feature family from EBM importance"
@@ -79,6 +80,9 @@ features:
 
 qa:
 	aki qa
+
+inspect-db:
+	aki inspect-db
 
 tune:
 	aki train --tune --n-trials $(N_TRIALS)
