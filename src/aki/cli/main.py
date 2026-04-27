@@ -149,6 +149,40 @@ def cmd_inspect_db(
         typer.echo(df.to_string(index=False))
 
 
+@app.command("inspect-landmarks")
+def cmd_inspect_landmarks(
+    limit: int = typer.Option(20, help="Number of rows to preview."),
+    mode: str = typer.Option(
+        "compact",
+        help="One of: compact, summary, per-stay.",
+    ),
+) -> None:
+    """Human-friendly inspection views for the landmark dataset."""
+    from aki.data.inspect import landmark_compact_preview, landmark_summary, landmarks_per_stay, path_status
+
+    cfg = load_configs()
+    typer.echo(f"DuckDB: {cfg.duckdb_path} [{path_status(cfg.duckdb_path)}]")
+    if not cfg.duckdb_path.exists():
+        raise typer.Exit(code=1)
+
+    with _duckdb_session(cfg, read_only=True) as conn:
+        if mode == "summary":
+            typer.echo("\nLandmark summary:")
+            typer.echo(landmark_summary(conn).to_string(index=False))
+            return
+
+        if mode == "per-stay":
+            typer.echo(f"\nLandmarks per stay (top {limit}):")
+            typer.echo(landmarks_per_stay(conn, limit=limit).to_string(index=False))
+            return
+
+        if mode != "compact":
+            raise typer.BadParameter("mode must be one of: compact, summary, per-stay")
+
+        typer.echo(f"\nCompact landmark preview (limit {limit}):")
+        typer.echo(landmark_compact_preview(conn, limit=limit).to_string(index=False))
+
+
 # Modeling stages
 
 
