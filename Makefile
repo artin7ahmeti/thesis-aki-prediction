@@ -3,7 +3,7 @@
 # Requires: `pip install -e ".[all]"` then `pre-commit install`.
 
 .PHONY: help install install-dev lint format typecheck test test-all \
-        stage cohort labels features qa inspect-db inspect-landmarks train tune minimal drift \
+        stage cohort labels features qa inspect-db inspect-landmarks build-browser-db train tune minimal drift \
         evaluate explain report pipeline \
         clean-cache clean-reports clean-all
 
@@ -27,6 +27,7 @@ help:
 	@echo "  qa             Run QA checks on curated data"
 	@echo "  inspect-db     Read-only DB summary + table preview"
 	@echo "  inspect-landmarks Compact landmark-specific inspection views"
+	@echo "  build-browser-db Build a local DuckDB browser DB from curated parquet"
 	@echo "  tune           Optuna HPO for every (task x family x model)"
 	@echo "  train          Train EBM / sparse LR / LightGBM (reads tuned params if cached)"
 	@echo "  minimal        Derive minimal feature family from EBM importance"
@@ -88,6 +89,9 @@ inspect-db:
 inspect-landmarks:
 	aki inspect-landmarks
 
+build-browser-db:
+	python scripts/inspect/build_local_browser_db.py --source-dir $(CURATED_SRC) --out $(BROWSER_DB_OUT)
+
 tune:
 	aki train --tune --n-trials $(N_TRIALS)
 
@@ -119,6 +123,8 @@ preprocess: stage cohort labels features qa drift
 
 # Default trial budget for `make tune` / `make pipeline TUNE=1`
 N_TRIALS ?= 120
+CURATED_SRC ?= data/komondor_curated
+BROWSER_DB_OUT ?= data/inspection/aki_browser.duckdb
 
 # Cleanup 
 clean-cache:
