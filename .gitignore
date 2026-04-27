@@ -14,6 +14,10 @@ reports/artifacts/
 mlruns/
 mlartifacts/
 
+thesis/*
+scripts/*
+aki_review/*
+
 CLAUDE.md
 .claude/
 # Python

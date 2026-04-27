@@ -44,6 +44,7 @@ def tune_model(
     n_folds: int = 5,
     seed: int = 42,
     timeout_s: int | None = None,
+    tag: str | None = None,
 ) -> dict[str, Any]:
     """Run Optuna HPO and return the best-params dict."""
     if model_name not in {"ebm", "scorecard", "lightgbm"}:
@@ -56,15 +57,7 @@ def tune_model(
     folds = list(cv.split(X, y, groups=groups))
 
     sampler = optuna.samplers.TPESampler(seed=seed, multivariate=True)
-    # MedianPruner: after a warmup of 5 full trials, compare a trial's
-    # running mean AUROC against the median at the same fold index and
-    # kill it early if it's already worse. Saves ~30-50% of HPO wall
-    # time without touching the final-trial quality.
-    pruner = optuna.pruners.MedianPruner(
-        n_startup_trials=5,
-        n_warmup_steps=2,  # don't prune until 2 folds have completed
-        interval_steps=1,
-    )
+    pruner = _make_pruner(model_name)
     study = optuna.create_study(direction="maximize", sampler=sampler, pruner=pruner)
 
     def objective(trial: optuna.Trial) -> float:
@@ -115,6 +108,7 @@ def tune_model(
         n_trials=n_trials,
         timeout=timeout_s,
         show_progress_bar=False,
+        callbacks=[_checkpoint_callback(tag)] if tag else None,
     )
     best = dict(study.best_params)
     best["_cv_mean_auroc"] = float(study.best_value)
@@ -125,6 +119,42 @@ def tune_model(
         f"AUROC={study.best_value:.4f} AUPRC={best['_cv_mean_auprc']:.4f}"
     )
     return best
+
+
+def _make_pruner(model_name: str) -> optuna.pruners.BasePruner:
+    """Return a model-appropriate Optuna pruner.
+
+    LightGBM uses a more aggressive warmup policy because some parameter
+    combinations are computationally pathological under 5-fold CV.
+    """
+    if model_name == "lightgbm":
+        return optuna.pruners.MedianPruner(
+            n_startup_trials=2,
+            n_warmup_steps=1,
+            interval_steps=1,
+        )
+    return optuna.pruners.MedianPruner(
+        n_startup_trials=5,
+        n_warmup_steps=2,
+        interval_steps=1,
+    )
+
+
+def _checkpoint_callback(tag: str):
+    """Persist the current incumbent after each completed trial."""
+
+    def callback(study: optuna.Study, _trial: optuna.trial.FrozenTrial) -> None:
+        try:
+            best = dict(study.best_params)
+        except ValueError:
+            return
+        payload = dict(best)
+        payload["_cv_mean_auroc"] = float(study.best_value)
+        payload["_cv_mean_auprc"] = float(study.best_trial.user_attrs.get("mean_auprc", np.nan))
+        payload["_n_trials"] = len(study.trials)
+        save_best_params(payload, tag)
+
+    return callback
 
 
 def save_best_params(params: dict[str, Any], tag: str) -> Path:
@@ -184,13 +214,17 @@ def _suggest_lightgbm(
     base = dict(base_params or cfg.models.get("lightgbm", {}))
     base.update(
         {
-            "num_leaves": trial.suggest_int("num_leaves", 15, 255, log=True),
-            "learning_rate": trial.suggest_float("learning_rate", 1e-3, 1e-1, log=True),
-            "min_child_samples": trial.suggest_int("min_child_samples", 10, 200, log=True),
-            "subsample": trial.suggest_float("subsample", 0.6, 1.0),
-            "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0),
-            "reg_alpha": trial.suggest_float("reg_alpha", 1e-8, 10.0, log=True),
-            "reg_lambda": trial.suggest_float("reg_lambda", 1e-8, 10.0, log=True),
+            # Keep the LightGBM protocol comparable across tasks, but avoid
+            # pathological regions that burn wall time without being
+            # realistically evaluable under a 2000-tree budget.
+            "num_leaves": trial.suggest_int("num_leaves", 15, 63, log=True),
+            "max_depth": trial.suggest_int("max_depth", 4, 8),
+            "learning_rate": trial.suggest_float("learning_rate", 1e-2, 6e-2, log=True),
+            "min_child_samples": trial.suggest_int("min_child_samples", 20, 120, log=True),
+            "subsample": trial.suggest_float("subsample", 0.7, 1.0),
+            "colsample_bytree": trial.suggest_float("colsample_bytree", 0.7, 1.0),
+            "reg_alpha": trial.suggest_float("reg_alpha", 1e-6, 5.0, log=True),
+            "reg_lambda": trial.suggest_float("reg_lambda", 1e-6, 5.0, log=True),
         }
     )
     return base

@@ -138,7 +138,7 @@ def _train_one(
         best = tune_model(
             model_name, X_tr, y_tr, groups=groups, cfg=cfg,
             base_params=model_params,
-            n_trials=n_trials, seed=cfg.random_seed,
+            n_trials=n_trials, seed=cfg.random_seed, tag=tag,
         )
         # Drop private diagnostic keys before merging
         public_best = {k: v for k, v in best.items() if not k.startswith("_")}
