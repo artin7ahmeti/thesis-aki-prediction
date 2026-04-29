@@ -173,6 +173,12 @@ def _write_patient_level_artifacts(
             "_reference_pred_proba",
             "_reference_target_prob",
             "_reference_model_tag",
+            "_reference_nonzero_terms",
+            "_reference_priority_hits",
+            "_reference_context_hits",
+            "_reference_renal_hit",
+            "_reference_hemodynamic_hit",
+            "_reference_active_terms",
         ]
         if col in case.index
     ]
