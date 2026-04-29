@@ -172,9 +172,9 @@ def load_best_params(tag: str) -> dict[str, Any] | None:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-# ------------------------------------------------------------------ #
+
 # Per-model suggestion spaces
-# ------------------------------------------------------------------ #
+
 def _suggest_ebm(
     trial: optuna.Trial,
     cfg: Config,
@@ -230,9 +230,8 @@ def _suggest_lightgbm(
     return base
 
 
-# ------------------------------------------------------------------ #
 # Per-model fit/predict (returns validation P(y=1))
-# ------------------------------------------------------------------ #
+
 def _fit_eval_ebm(
     params,
     X_tr,

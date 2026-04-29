@@ -44,7 +44,7 @@ lightgbm:
   class_weight: balanced
   early_stopping_rounds: 100
 
-# ---- Calibration (applied post-training on validation split) ----
+# Calibration (applied post-training on validation split)
 calibration:
   method: isotonic               # or "sigmoid" (Platt)
   cv: prefit

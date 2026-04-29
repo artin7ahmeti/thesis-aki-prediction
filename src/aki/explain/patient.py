@@ -34,6 +34,58 @@ def patient_additive_contributions(
     raise ValueError(f"patient contributions not supported for {art.name}")
 
 
+def select_representative_patient_case(
+    art: ModelArtifact,
+    df: pd.DataFrame,
+    label_col: str,
+    *,
+    quantile: float = 0.90,
+) -> pd.Series:
+    """Pick one deterministic held-out landmark for a patient-level figure.
+
+    The default strategy prefers positive test rows, then selects the row whose
+    predicted risk is closest to the requested quantile of that positive-risk
+    distribution. This avoids using an extreme outlier while still producing a
+    high-risk, clinically interesting example. Ties are broken toward rows with
+    fewer missing feature values.
+    """
+    if label_col not in df.columns:
+        raise ValueError(f"label column {label_col!r} missing from candidate frame")
+
+    candidates = df.dropna(subset=[label_col]).copy()
+    if candidates.empty:
+        raise ValueError("no rows with non-missing labels are available")
+
+    X = candidates[art.feature_names]
+    probs = _predict_artifact_proba(art, X)
+    candidates["_pred_proba"] = probs
+    candidates["_missing_features"] = X.isna().sum(axis=1).to_numpy()
+
+    positives = candidates[candidates[label_col].astype(int) == 1].copy()
+    if not positives.empty:
+        pool = positives
+        selection_pool = "positive"
+    else:
+        pool = candidates
+        selection_pool = "all"
+
+    target_prob = float(pool["_pred_proba"].quantile(quantile))
+    pool["_distance_to_target"] = (pool["_pred_proba"] - target_prob).abs()
+    pool["_selection_pool"] = selection_pool
+    pool["_selection_quantile"] = float(quantile)
+    pool["_selection_target_prob"] = target_prob
+
+    sort_cols = ["_distance_to_target", "_missing_features", "_pred_proba"]
+    ascending = [True, True, False]
+    for maybe_col in ("hours_since_icu_admit", "subject_id", "stay_id", "landmark_time"):
+        if maybe_col in pool.columns:
+            sort_cols.append(maybe_col)
+            ascending.append(True)
+
+    chosen = pool.sort_values(sort_cols, ascending=ascending).iloc[0].copy()
+    return chosen
+
+
 def _ebm_contributions(art: ModelArtifact, x_row: pd.Series) -> pd.DataFrame:
     """Use EBM's local explanation API."""
     X = pd.DataFrame([x_row[art.feature_names].values], columns=art.feature_names)
@@ -135,3 +187,11 @@ def _binned_scorecard_contributions(art: ModelArtifact, x_row: pd.Series) -> pd.
         pd.DataFrame(rows)
         .sort_values("contribution_logodds", key=np.abs, ascending=False, ignore_index=True)
     )
+
+
+def _predict_artifact_proba(art: ModelArtifact, X: pd.DataFrame) -> np.ndarray:
+    """Return calibrated probabilities for a saved model artifact."""
+    X = X[art.feature_names]
+    if art.calibrator is not None:
+        return art.calibrator.predict_proba(X)[:, 1]
+    return art.estimator.predict_proba(X)[:, 1]

@@ -1,4 +1,4 @@
-"""Matplotlib plots: EBM shape functions + reliability curves."""
+"""Matplotlib plots: EBM shapes, patient explanations, and calibration curves."""
 
 from __future__ import annotations
 
@@ -142,3 +142,119 @@ def plot_reliability(
     fig.savefig(out_path, dpi=150)
     plt.close(fig)
     return out_path
+
+
+def plot_patient_contributions(
+    contrib_df: pd.DataFrame,
+    out_path: Path,
+    *,
+    title: str = "Patient-level explanation",
+    subtitle: str | None = None,
+    top_n: int = 10,
+) -> Path:
+    """Horizontal bar chart of one patient's additive feature contributions."""
+    required = {"feature", "value", "contribution_logodds"}
+    missing = required.difference(contrib_df.columns)
+    if missing:
+        raise ValueError(f"contribution frame missing columns: {sorted(missing)}")
+
+    df = contrib_df.copy()
+    df = df.loc[df["feature"].astype(str).str.len() > 0].copy()
+    if df.empty:
+        raise ValueError("no patient contributions available to plot")
+
+    df["abs_contribution"] = df["contribution_logodds"].abs()
+    df = df.sort_values("abs_contribution", ascending=False).head(top_n).copy()
+    df = df.sort_values("contribution_logodds", ascending=True).reset_index(drop=True)
+    df["label"] = [
+        f"{_pretty_feature_name(feature)} = {_format_feature_value(value)}"
+        for feature, value in zip(df["feature"], df["value"], strict=True)
+    ]
+
+    colors = np.where(df["contribution_logodds"] >= 0, "#C44E52", "#4E79A7")
+    fig_height = max(4.8, 0.55 * len(df) + 2.1)
+    fig, ax = plt.subplots(figsize=(10.5, fig_height))
+
+    y = np.arange(len(df))
+    bars = ax.barh(
+        y,
+        df["contribution_logodds"],
+        color=colors,
+        alpha=0.92,
+        height=0.72,
+        linewidth=0,
+    )
+    ax.axvline(0.0, color="#333333", linewidth=1.0)
+    ax.set_yticks(y)
+    ax.set_yticklabels(df["label"])
+    ax.set_xlabel("Contribution to predicted log-odds of AKI")
+    ax.set_title(title, loc="left", fontsize=13, pad=10)
+    if subtitle:
+        ax.text(
+            0.0,
+            1.03,
+            subtitle,
+            transform=ax.transAxes,
+            ha="left",
+            va="bottom",
+            fontsize=9,
+            color="#555555",
+        )
+    ax.grid(axis="x", alpha=0.20)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+    x_min = float(df["contribution_logodds"].min())
+    x_max = float(df["contribution_logodds"].max())
+    pad = max(0.08, 0.12 * max(abs(x_min), abs(x_max), 0.5))
+    ax.set_xlim(x_min - pad, x_max + pad)
+
+    for bar, value in zip(bars, df["contribution_logodds"], strict=True):
+        x = float(bar.get_width())
+        y_mid = bar.get_y() + bar.get_height() / 2.0
+        if x >= 0:
+            ax.text(x + pad * 0.08, y_mid, f"+{x:.2f}", ha="left", va="center", fontsize=9)
+        else:
+            ax.text(x - pad * 0.08, y_mid, f"{x:.2f}", ha="right", va="center", fontsize=9)
+
+    fig.subplots_adjust(left=0.43, right=0.96, top=0.84 if subtitle else 0.88, bottom=0.14)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=170, bbox_inches="tight")
+    plt.close(fig)
+    return out_path
+
+
+def _pretty_feature_name(name: object) -> str:
+    text = str(name)
+    replacements = {
+        "map": "MAP",
+        "sbp": "SBP",
+        "dbp": "DBP",
+        "spo2": "SpO2",
+        "gcs": "GCS",
+        "bun": "BUN",
+        "aki": "AKI",
+    }
+    parts = text.split("_")
+    pretty_parts = []
+    for part in parts:
+        lower = part.lower()
+        pretty_parts.append(replacements.get(lower, part))
+    return " ".join(pretty_parts)
+
+
+def _format_feature_value(value: object) -> str:
+    if pd.isna(value):
+        return "missing"
+    try:
+        numeric = float(value)
+    except Exception:
+        return str(value)
+
+    if abs(numeric) >= 100:
+        return f"{numeric:.0f}"
+    if abs(numeric - round(numeric)) < 1e-9:
+        return f"{numeric:.0f}"
+    if abs(numeric) >= 10:
+        return f"{numeric:.1f}"
+    return f"{numeric:.2f}"
