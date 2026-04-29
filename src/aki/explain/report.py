@@ -17,7 +17,7 @@ from loguru import logger
 from aki.explain.global_importance import global_importance_table
 from aki.explain.patient import (
     patient_additive_contributions,
-    select_representative_patient_case,
+    rank_representative_patient_cases,
 )
 from aki.explain.plots import (
     plot_ebm_shapes,
@@ -136,7 +136,7 @@ def _write_patient_level_artifacts(
         return
 
     reference = _bedside_reference_bundle(cfg=cfg, art=art)
-    case = select_representative_patient_case(
+    ranked_cases = rank_representative_patient_cases(
         art,
         test_df,
         label_col,
@@ -144,7 +144,9 @@ def _write_patient_level_artifacts(
         reference_art=reference["artifact"] if reference else None,
         reference_df=reference["test_df"] if reference else None,
         reference_label_col=label_col,
+        top_k=10 if reference else 1,
     )
+    case = ranked_cases.iloc[0].copy()
     contrib = patient_additive_contributions(art, case)
 
     table_dir = paths.tables / "per_model" / tag
@@ -154,9 +156,65 @@ def _write_patient_level_artifacts(
 
     contrib.to_csv(table_dir / "patient_contributions.csv", index=False)
 
-    meta_cols = [
+    meta_cols = _patient_case_export_columns(case, label_col)
+    case.loc[meta_cols].to_frame().T.to_csv(table_dir / "patient_case.csv", index=False)
+
+    if reference:
+        ref_case = _align_reference_case(reference["test_df"], case)
+        if ref_case is not None:
+            ref_contrib = patient_additive_contributions(reference["artifact"], ref_case)
+            ref_contrib.to_csv(table_dir / "patient_contributions_reference_scorecard.csv", index=False)
+            plot_patient_contributions(
+                ref_contrib,
+                out_path=fig_dir / "patient_explanation_reference_scorecard.png",
+                title="Final bedside scorecard explanation",
+                subtitle=_patient_plot_subtitle(case, label_col),
+                top_n=10,
+            )
+            plot_patient_contribution_comparison(
+                contrib,
+                ref_contrib,
+                out_path=fig_dir / "patient_explanation_comparison.png",
+                title="Patient-level explanation",
+                subtitle=_patient_plot_subtitle(case, label_col),
+                top_n=8,
+            )
+        _write_patient_candidate_review_bundle(
+            art=art,
+            label_col=label_col,
+            ranked_cases=ranked_cases,
+            reference=reference,
+            table_dir=table_dir,
+            fig_dir=fig_dir,
+        )
+
+    subtitle = _patient_plot_subtitle(case, label_col)
+    plot_patient_contributions(
+        contrib,
+        out_path=fig_dir / "patient_explanation.png",
+        title="Patient-level explanation",
+        subtitle=subtitle,
+        top_n=10,
+    )
+
+
+def _patient_plot_subtitle(case: pd.Series, label_col: str) -> str:
+    label_text = "True Positive" if int(case[label_col]) == 1 else "True Negative"
+    parts = [f"Test Landmark - {label_text}"]
+    if "_pred_proba" in case.index:
+        parts.append(f"Predicted risk: {100.0 * float(case['_pred_proba']):.1f}%")
+    if "_reference_pred_proba" in case.index and pd.notna(case["_reference_pred_proba"]):
+        parts.append(f"Bedside Scorecard Risk: {100.0 * float(case['_reference_pred_proba']):.1f}%")
+    if "hours_since_icu_admit" in case.index and pd.notna(case["hours_since_icu_admit"]):
+        parts.append(f"{float(case['hours_since_icu_admit']):.0f}h since ICU admission")
+    return " | ".join(parts)
+
+
+def _patient_case_export_columns(case: pd.Series, label_col: str) -> list[str]:
+    return [
         col
         for col in [
+            "_candidate_rank",
             "subject_id",
             "stay_id",
             "hadm_id",
@@ -179,52 +237,61 @@ def _write_patient_level_artifacts(
             "_reference_renal_hit",
             "_reference_hemodynamic_hit",
             "_reference_active_terms",
+            "_ebm_reference_overlap_count",
+            "_ebm_reference_overlap_terms",
         ]
         if col in case.index
     ]
-    case.loc[meta_cols].to_frame().T.to_csv(table_dir / "patient_case.csv", index=False)
-
-    if reference:
-        ref_case = _align_reference_case(reference["test_df"], case)
-        if ref_case is not None:
-            ref_contrib = patient_additive_contributions(reference["artifact"], ref_case)
-            ref_contrib.to_csv(table_dir / "patient_contributions_reference_scorecard.csv", index=False)
-            plot_patient_contributions(
-                ref_contrib,
-                out_path=fig_dir / "patient_explanation_reference_scorecard.png",
-                title="Bedside scorecard explanation",
-                subtitle=_patient_plot_subtitle(case, label_col),
-                top_n=10,
-            )
-            plot_patient_contribution_comparison(
-                contrib,
-                ref_contrib,
-                out_path=fig_dir / "patient_explanation_comparison.png",
-                title="Patient-level explanation",
-                subtitle=_patient_plot_subtitle(case, label_col),
-                top_n=8,
-            )
-
-    subtitle = _patient_plot_subtitle(case, label_col)
-    plot_patient_contributions(
-        contrib,
-        out_path=fig_dir / "patient_explanation.png",
-        title="Patient-level explanation",
-        subtitle=subtitle,
-        top_n=10,
-    )
 
 
-def _patient_plot_subtitle(case: pd.Series, label_col: str) -> str:
-    label_text = "True Positive" if int(case[label_col]) == 1 else "True Negative"
-    parts = [f"Test Landmark - {label_text}"]
-    if "_pred_proba" in case.index:
-        parts.append(f"Predicted risk: {100.0 * float(case['_pred_proba']):.1f}%")
-    if "_reference_pred_proba" in case.index and pd.notna(case["_reference_pred_proba"]):
-        parts.append(f"Bedside Scorecard Risk: {100.0 * float(case['_reference_pred_proba']):.1f}%")
-    if "hours_since_icu_admit" in case.index and pd.notna(case["hours_since_icu_admit"]):
-        parts.append(f"{float(case['hours_since_icu_admit']):.0f}h since ICU admission")
-    return " | ".join(parts)
+def _write_patient_candidate_review_bundle(
+    *,
+    art: ModelArtifact,
+    label_col: str,
+    ranked_cases: pd.DataFrame,
+    reference: dict[str, object],
+    table_dir,
+    fig_dir,
+) -> None:
+    rows: list[pd.Series] = []
+    for rank, (_, candidate) in enumerate(ranked_cases.iterrows(), start=1):
+        candidate = candidate.copy()
+        ref_case = _align_reference_case(reference["test_df"], candidate)
+        if ref_case is None:
+            continue
+
+        ebm_contrib = patient_additive_contributions(art, candidate)
+        ref_contrib = patient_additive_contributions(reference["artifact"], ref_case)
+        overlap_terms = _overlap_terms_between_models(ebm_contrib, ref_contrib)
+        candidate["_candidate_rank"] = rank
+        candidate["_ebm_reference_overlap_count"] = float(len(overlap_terms))
+        candidate["_ebm_reference_overlap_terms"] = ",".join(overlap_terms)
+        rows.append(candidate.loc[_patient_case_export_columns(candidate, label_col)])
+
+        plot_patient_contribution_comparison(
+            ebm_contrib,
+            ref_contrib,
+            out_path=fig_dir / f"patient_explanation_comparison_candidate_{rank:02d}.png",
+            title="Patient-level explanation",
+            subtitle=_patient_plot_subtitle(candidate, label_col),
+            top_n=8,
+        )
+
+    if rows:
+        pd.DataFrame(rows).to_csv(table_dir / "patient_candidates.csv", index=False)
+
+
+def _overlap_terms_between_models(
+    ebm_contrib: pd.DataFrame,
+    ref_contrib: pd.DataFrame,
+) -> list[str]:
+    ebm_terms = set(ebm_contrib["feature"].astype(str))
+    ref_terms = [
+        feature
+        for feature in ref_contrib["feature"].astype(str).tolist()
+        if abs(float(ref_contrib.loc[ref_contrib["feature"].astype(str) == feature, "contribution_logodds"].iloc[0])) > 1e-9
+    ]
+    return [feature for feature in ref_terms if feature in ebm_terms]
 
 
 def _bedside_reference_bundle(

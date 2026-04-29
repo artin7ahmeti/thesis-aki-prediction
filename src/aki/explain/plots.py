@@ -185,8 +185,8 @@ def plot_patient_contribution_comparison(
     *,
     title: str = "Patient-level explanation",
     subtitle: str | None = None,
-    ebm_title: str = "Full EBM (combined)",
-    scorecard_title: str = "Bedside scorecard (augmented v2)",
+    ebm_title: str = "Flagship EBM (combined)",
+    scorecard_title: str = "Final bedside scorecard (augmented v2)",
     top_n: int = 8,
 ) -> Path:
     """Two-panel local explanation for the same held-out landmark."""

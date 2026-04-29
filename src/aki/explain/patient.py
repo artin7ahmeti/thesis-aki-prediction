@@ -44,14 +44,61 @@ def select_representative_patient_case(
     reference_df: pd.DataFrame | None = None,
     reference_label_col: str | None = None,
 ) -> pd.Series:
-    """Pick one deterministic held-out landmark for a patient-level figure.
+    """Pick one deterministic held-out landmark for a patient-level figure."""
+    ranked = rank_representative_patient_cases(
+        art,
+        df,
+        label_col,
+        quantile=quantile,
+        reference_art=reference_art,
+        reference_df=reference_df,
+        reference_label_col=reference_label_col,
+        top_k=1,
+    )
+    return ranked.iloc[0].copy()
 
-    The default strategy prefers positive test rows, then selects the row whose
-    predicted risk is closest to the requested quantile of that positive-risk
-    distribution. This avoids using an extreme outlier while still producing a
-    high-risk, clinically interesting example. Ties are broken toward rows with
-    fewer missing feature values.
+
+def rank_representative_patient_cases(
+    art: ModelArtifact,
+    df: pd.DataFrame,
+    label_col: str,
+    *,
+    quantile: float = 0.90,
+    reference_art: ModelArtifact | None = None,
+    reference_df: pd.DataFrame | None = None,
+    reference_label_col: str | None = None,
+    top_k: int = 10,
+) -> pd.DataFrame:
+    """Rank deterministic held-out landmarks for patient-level review.
+
+    The ranking prefers high-risk positive test landmarks. When a bedside
+    reference scorecard is available, the shortlist is refined toward cases
+    where the bedside explanation uses clinically central terms such as
+    creatinine, MAP, and loop diuretic exposure.
     """
+    ranked = _rank_candidate_cases(
+        art,
+        df,
+        label_col,
+        quantile=quantile,
+        reference_art=reference_art,
+        reference_df=reference_df,
+        reference_label_col=reference_label_col,
+    )
+    return ranked.head(top_k).copy()
+
+
+def _rank_candidate_cases(
+    art: ModelArtifact,
+    df: pd.DataFrame,
+    label_col: str,
+    *,
+    quantile: float,
+    reference_art: ModelArtifact | None,
+    reference_df: pd.DataFrame | None,
+    reference_label_col: str | None,
+) -> pd.DataFrame:
+    """Return the fully ranked candidate pool for one explanation target."""
     if label_col not in df.columns:
         raise ValueError(f"label column {label_col!r} missing from candidate frame")
 
@@ -142,10 +189,9 @@ def select_representative_patient_case(
             ascending=ascending,
         )
         if shortlisted is not None and not shortlisted.empty:
-            return shortlisted.iloc[0].copy()
+            return shortlisted.reset_index(drop=True)
 
-    chosen = pool.sort_values(sort_cols, ascending=ascending).iloc[0].copy()
-    return chosen
+    return pool.sort_values(sort_cols, ascending=ascending).reset_index(drop=True)
 
 
 def _shortlist_legible_reference_cases(
