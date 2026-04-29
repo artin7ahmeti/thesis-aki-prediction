@@ -21,6 +21,7 @@ from aki.explain.patient import (
 )
 from aki.explain.plots import (
     plot_ebm_shapes,
+    plot_patient_contribution_comparison,
     plot_patient_contributions,
     plot_reliability,
 )
@@ -182,6 +183,21 @@ def _write_patient_level_artifacts(
         if ref_case is not None:
             ref_contrib = patient_additive_contributions(reference["artifact"], ref_case)
             ref_contrib.to_csv(table_dir / "patient_contributions_reference_scorecard.csv", index=False)
+            plot_patient_contributions(
+                ref_contrib,
+                out_path=fig_dir / "patient_explanation_reference_scorecard.png",
+                title="Bedside scorecard explanation",
+                subtitle=_patient_plot_subtitle(case, label_col),
+                top_n=10,
+            )
+            plot_patient_contribution_comparison(
+                contrib,
+                ref_contrib,
+                out_path=fig_dir / "patient_explanation_comparison.png",
+                title="Patient-level explanation",
+                subtitle=_patient_plot_subtitle(case, label_col),
+                top_n=8,
+            )
 
     subtitle = _patient_plot_subtitle(case, label_col)
     plot_patient_contributions(
@@ -194,22 +210,14 @@ def _write_patient_level_artifacts(
 
 
 def _patient_plot_subtitle(case: pd.Series, label_col: str) -> str:
-    parts = [
-        "Held-out test landmark",
-        f"true label: {int(case[label_col])}",
-    ]
+    label_text = "True Positive" if int(case[label_col]) == 1 else "True Negative"
+    parts = [f"Test Landmark - {label_text}"]
     if "_pred_proba" in case.index:
-        parts.append(f"predicted risk: {100.0 * float(case['_pred_proba']):.1f}%")
+        parts.append(f"Predicted risk: {100.0 * float(case['_pred_proba']):.1f}%")
     if "_reference_pred_proba" in case.index and pd.notna(case["_reference_pred_proba"]):
-        parts.append(f"bedside scorecard risk: {100.0 * float(case['_reference_pred_proba']):.1f}%")
+        parts.append(f"Bedside Scorecard Risk: {100.0 * float(case['_reference_pred_proba']):.1f}%")
     if "hours_since_icu_admit" in case.index and pd.notna(case["hours_since_icu_admit"]):
         parts.append(f"{float(case['hours_since_icu_admit']):.0f}h since ICU admission")
-    if "_selection_strategy" in case.index:
-        if str(case["_selection_strategy"]) == "primary_plus_bedside_agreement":
-            parts.append("selected for agreement with bedside scorecard")
-        elif "_selection_pool" in case.index:
-            pool = "positive cases" if str(case["_selection_pool"]) == "positive" else "all test cases"
-            parts.append(f"selected from {pool}")
     return " | ".join(parts)
 
 

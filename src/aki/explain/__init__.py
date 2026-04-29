@@ -12,6 +12,7 @@ from aki.explain.patient import (
 )
 from aki.explain.plots import (
     plot_ebm_shapes,
+    plot_patient_contribution_comparison,
     plot_patient_contributions,
     plot_reliability,
 )
@@ -43,6 +44,7 @@ __all__ = [
     "lightgbm_local_shap",
     "patient_additive_contributions",
     "plot_ebm_shapes",
+    "plot_patient_contribution_comparison",
     "plot_patient_contributions",
     "plot_reliability",
     "run_explanations",
