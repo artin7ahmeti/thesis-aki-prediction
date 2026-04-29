@@ -40,6 +40,9 @@ def select_representative_patient_case(
     label_col: str,
     *,
     quantile: float = 0.90,
+    reference_art: ModelArtifact | None = None,
+    reference_df: pd.DataFrame | None = None,
+    reference_label_col: str | None = None,
 ) -> pd.Series:
     """Pick one deterministic held-out landmark for a patient-level figure.
 
@@ -57,7 +60,7 @@ def select_representative_patient_case(
         raise ValueError("no rows with non-missing labels are available")
 
     X = candidates[art.feature_names]
-    probs = _predict_artifact_proba(art, X)
+    probs = artifact_predict_proba(art, X)
     candidates["_pred_proba"] = probs
     candidates["_missing_features"] = X.isna().sum(axis=1).to_numpy()
 
@@ -70,13 +73,50 @@ def select_representative_patient_case(
         selection_pool = "all"
 
     target_prob = float(pool["_pred_proba"].quantile(quantile))
-    pool["_distance_to_target"] = (pool["_pred_proba"] - target_prob).abs()
     pool["_selection_pool"] = selection_pool
     pool["_selection_quantile"] = float(quantile)
     pool["_selection_target_prob"] = target_prob
+    pool["_selection_strategy"] = "primary_quantile_match"
 
-    sort_cols = ["_distance_to_target", "_missing_features", "_pred_proba"]
-    ascending = [True, True, False]
+    if reference_art is not None and reference_df is not None:
+        ref_label = reference_label_col or label_col
+        ref_candidates = reference_df.dropna(subset=[ref_label]).copy()
+        if not ref_candidates.empty:
+            ref_X = ref_candidates[reference_art.feature_names]
+            ref_candidates["_reference_pred_proba"] = artifact_predict_proba(reference_art, ref_X)
+
+            key_cols = [c for c in ("stay_id", "subject_id", "landmark_time") if c in pool.columns and c in ref_candidates.columns]
+            if key_cols:
+                join_cols = key_cols + ["_reference_pred_proba"]
+                pool = pool.merge(ref_candidates[join_cols], on=key_cols, how="inner")
+                ref_pool = pool if positives.empty else pool[pool[label_col].astype(int) == 1].copy()
+                if not ref_pool.empty:
+                    ref_target_prob = float(ref_pool["_reference_pred_proba"].quantile(quantile))
+                    pool["_reference_target_prob"] = ref_target_prob
+                    pool["_distance_to_target"] = (
+                        (pool["_pred_proba"] - target_prob).abs()
+                        + 0.75 * (pool["_reference_pred_proba"] - ref_target_prob).abs()
+                    )
+                    pool["_agreement_gap"] = (pool["_pred_proba"] - pool["_reference_pred_proba"]).abs()
+                    pool["_reference_model_tag"] = (
+                        f"{reference_art.task}__{reference_art.family}__{reference_art.name}"
+                    )
+                    pool["_selection_strategy"] = "primary_plus_bedside_agreement"
+                else:
+                    pool["_distance_to_target"] = (pool["_pred_proba"] - target_prob).abs()
+                    pool["_agreement_gap"] = np.nan
+            else:
+                pool["_distance_to_target"] = (pool["_pred_proba"] - target_prob).abs()
+                pool["_agreement_gap"] = np.nan
+        else:
+            pool["_distance_to_target"] = (pool["_pred_proba"] - target_prob).abs()
+            pool["_agreement_gap"] = np.nan
+    else:
+        pool["_distance_to_target"] = (pool["_pred_proba"] - target_prob).abs()
+        pool["_agreement_gap"] = np.nan
+
+    sort_cols = ["_distance_to_target", "_agreement_gap", "_missing_features", "_pred_proba"]
+    ascending = [True, True, True, False]
     for maybe_col in ("hours_since_icu_admit", "subject_id", "stay_id", "landmark_time"):
         if maybe_col in pool.columns:
             sort_cols.append(maybe_col)
@@ -189,7 +229,7 @@ def _binned_scorecard_contributions(art: ModelArtifact, x_row: pd.Series) -> pd.
     )
 
 
-def _predict_artifact_proba(art: ModelArtifact, X: pd.DataFrame) -> np.ndarray:
+def artifact_predict_proba(art: ModelArtifact, X: pd.DataFrame) -> np.ndarray:
     """Return calibrated probabilities for a saved model artifact."""
     X = X[art.feature_names]
     if art.calibrator is not None:

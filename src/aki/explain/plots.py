@@ -188,18 +188,6 @@ def plot_patient_contributions(
     ax.set_yticks(y)
     ax.set_yticklabels(df["label"])
     ax.set_xlabel("Contribution to predicted log-odds of AKI")
-    ax.set_title(title, loc="left", fontsize=13, pad=10)
-    if subtitle:
-        ax.text(
-            0.0,
-            1.03,
-            subtitle,
-            transform=ax.transAxes,
-            ha="left",
-            va="bottom",
-            fontsize=9,
-            color="#555555",
-        )
     ax.grid(axis="x", alpha=0.20)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
@@ -217,7 +205,20 @@ def plot_patient_contributions(
         else:
             ax.text(x - pad * 0.08, y_mid, f"{x:.2f}", ha="right", va="center", fontsize=9)
 
-    fig.subplots_adjust(left=0.43, right=0.96, top=0.84 if subtitle else 0.88, bottom=0.14)
+    fig.suptitle(title, x=0.07, y=0.98, ha="left", fontsize=13)
+    if subtitle:
+        fig.text(
+            0.07,
+            0.945,
+            subtitle,
+            ha="left",
+            va="top",
+            fontsize=9,
+            color="#555555",
+            wrap=True,
+        )
+
+    fig.subplots_adjust(left=0.43, right=0.96, top=0.88 if subtitle else 0.92, bottom=0.14)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=170, bbox_inches="tight")
     plt.close(fig)
@@ -244,6 +245,14 @@ def _pretty_feature_name(name: object) -> str:
 
 
 def _format_feature_value(value: object) -> str:
+    if isinstance(value, (list, tuple, np.ndarray)):
+        flat = np.asarray(value).ravel().tolist()
+        if not flat:
+            return "interaction"
+        return " / ".join(_format_feature_value(v) for v in flat[:3])
+    if isinstance(value, str):
+        text = value.strip()
+        return text or "interaction"
     if pd.isna(value):
         return "missing"
     try:
