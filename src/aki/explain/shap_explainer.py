@@ -11,7 +11,6 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import shap
 from loguru import logger
 
 from aki.models.base import ModelArtifact
@@ -25,6 +24,8 @@ def lightgbm_global_shap(
     random_state: int = 42,
 ) -> Path:
     """Write a mean-|SHAP| importance table + summary PNG."""
+    import shap
+
     if art.name != "lightgbm":
         raise ValueError("lightgbm_global_shap requires a LightGBM artifact")
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -63,6 +64,8 @@ def lightgbm_local_shap(
     x_row: pd.Series | pd.DataFrame,
 ) -> pd.DataFrame:
     """Per-feature SHAP contributions for a single landmark."""
+    import shap
+
     if art.name != "lightgbm":
         raise ValueError("lightgbm_local_shap requires a LightGBM artifact")
     if isinstance(x_row, pd.Series):

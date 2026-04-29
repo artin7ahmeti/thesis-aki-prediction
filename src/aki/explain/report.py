@@ -25,7 +25,6 @@ from aki.explain.plots import (
     plot_reliability,
 )
 from aki.explain.scorecard_card import build_scorecard_artifact
-from aki.explain.shap_explainer import lightgbm_global_shap
 from aki.models.base import ModelArtifact
 from aki.split.splits import assign_splits, load_split
 from aki.utils.config import Config
@@ -93,6 +92,8 @@ def run_explanations(
 
         # SHAP (LightGBM only)
         if art.name == "lightgbm":
+            from aki.explain.shap_explainer import lightgbm_global_shap
+
             if art.family not in _test_cache:
                 features_df = pd.read_parquet(
                     cfg.curated_dir / "features" / f"{art.family}.parquet"
